@@ -4,11 +4,9 @@ import { useAuth } from '../context/AuthContext';
 /**
  * Employee Dashboard (Timesheet + Status)
  * Enhancements in this iteration:
- * 1) Adds Week/Month tabs in the timesheet calendar header.
- * 2) Implements a Month view that renders the full month (7 columns, 5–6 rows).
- * 3) Preserves the selected date when switching between Week and Month.
- * 4) Adds a visible Close button to the New Entry panel to hide and clear unsaved inputs.
- * 5) Responsive and Ocean Professional styling maintained. Frontend-only.
+ * - Swap Close button and Work/Leave tabs positions in New Entry panel header.
+ * - Add Status tab with sub-tabs: Work Status and Leave Status, showing mock lists with Edit/Delete actions.
+ * - Maintain Ocean Professional styling and accessible focus order.
  */
 
 // PUBLIC_INTERFACE
@@ -20,8 +18,8 @@ export default function Dashboard() {
 
   // Timer state (in-memory only)
   const [isRunning, setIsRunning] = useState(false);
-  const [elapsed, setElapsed] = useState(0); // seconds for current session
-  const [lastSession, setLastSession] = useState(0); // seconds for last completed session
+  const [elapsed, setElapsed] = useState(0);
+  const [lastSession, setLastSession] = useState(0);
   const tickRef = useRef(null);
 
   // Role dropdown (disabled for now; default Employee)
@@ -61,7 +59,21 @@ export default function Dashboard() {
   });
   const LEAVE_MAX_HOURS = 8;
 
-  // Keep entryDate synced with selectedDateISO (preserve across views)
+  // Status sub-tabs state and mock data
+  const [statusSubTab, setStatusSubTab] = useState('work'); // 'work' | 'leave'
+  const [dailyLogs, setDailyLogs] = useState([
+    { id: 'w1', date: todayISO, hours: 7.5, task: 'Planning', status: 'draft' },
+    { id: 'w2', date: toISO(new Date(Date.now() - 86400000)), hours: 8, task: 'Testing', status: 'pending' },
+    { id: 'w3', date: toISO(new Date(Date.now() - 2 * 86400000)), hours: 6, task: 'Meetings', status: 'approved' },
+    { id: 'w4', date: toISO(new Date(Date.now() - 3 * 86400000)), hours: 4, task: 'Planning', status: 'rejected' },
+  ]);
+  const [leaveRequests, setLeaveRequests] = useState([
+    { id: 'l1', date: todayISO, type: 'Sick', duration: 'full', hours: 8, status: 'draft' },
+    { id: 'l2', date: toISO(new Date(Date.now() - 6 * 86400000)), type: 'Casual', duration: 'partial', hours: 4, status: 'pending' },
+    { id: 'l3', date: toISO(new Date(Date.now() - 10 * 86400000)), type: 'Vacation', duration: 'full', hours: 8, status: 'approved' },
+  ]);
+
+  // Keep entryDate synced with selectedDateISO
   useEffect(() => {
     setEntryDate(selectedDateISO);
   }, [selectedDateISO]);
@@ -127,12 +139,12 @@ export default function Dashboard() {
   };
 
   // Helpers
-  const toISO = (d) => {
+  function toISO(d) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
-  };
+  }
 
   const formatDateReadable = (iso) => {
     try {
@@ -144,10 +156,9 @@ export default function Dashboard() {
   };
 
   const getStartOfWeek = (date) => {
-    // Weeks start on Monday; get Monday of current week
     const d = new Date(date);
     const day = d.getDay(); // 0=Sun .. 6=Sat
-    const diffToMon = ((day + 6) % 7); // Mon=0 .. Sun=6
+    const diffToMon = ((day + 6) % 7);
     const monday = new Date(d);
     monday.setDate(d.getDate() - diffToMon);
     monday.setHours(0, 0, 0, 0);
@@ -155,7 +166,6 @@ export default function Dashboard() {
   };
 
   const weekDaysFrom = (startDate) => {
-    // Returns 7 Date objects from startDate (assumed Monday)
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(startDate);
       d.setDate(startDate.getDate() + i);
@@ -164,16 +174,13 @@ export default function Dashboard() {
   };
 
   const getMonthGrid = (dateInMonth) => {
-    // Build a 6-row x 7-col grid for the month view (some months only use 5 rows)
     const d = new Date(dateInMonth);
     d.setDate(1);
     d.setHours(0, 0, 0, 0);
-    const firstDay = d; // first of month
+    const firstDay = d;
     const firstDayWeekday = (firstDay.getDay() + 6) % 7; // 0=Mon .. 6=Sun
     const gridStart = new Date(firstDay);
     gridStart.setDate(firstDay.getDate() - firstDayWeekday);
-
-    // 42 cells (6 weeks x 7 days)
     return Array.from({ length: 42 }, (_, i) => {
       const cellDate = new Date(gridStart);
       cellDate.setDate(gridStart.getDate() + i);
@@ -248,7 +255,6 @@ export default function Dashboard() {
 
   const onClear = () => {
     clearFormOnly();
-    // Reset entry date back to selected date (preserve selection)
     setEntryDate(selectedDateISO);
   };
 
@@ -260,12 +266,13 @@ export default function Dashboard() {
   };
 
   const onSaveDraft = () => {
-    // eslint-disable-next-line no-console
     if (entryMode === 'work') {
+      // eslint-disable-next-line no-console
       console.log('Draft saved (work, local only):', {
         project, task, notes, hours: hours === '' ? null : Number(hours), date: selectedDateISO,
       });
     } else {
+      // eslint-disable-next-line no-console
       console.log('Draft saved (leave, local only):', {
         date: selectedDateISO,
         leaveType,
@@ -284,13 +291,7 @@ export default function Dashboard() {
     setWorkErrors(nextErrors);
     if (hourErr || dateErr) return;
 
-    const payload = {
-      project,
-      task,
-      notes,
-      hours: Number(hours),
-      date: selectedDateISO,
-    };
+    const payload = { project, task, notes, hours: Number(hours), date: selectedDateISO };
     // eslint-disable-next-line no-console
     console.log('Submitting work entry (frontend only):', payload);
   };
@@ -298,23 +299,15 @@ export default function Dashboard() {
   // PUBLIC_INTERFACE
   const validateLeave = () => {
     /** Validate leave request fields; returns object with errors. */
-    const errs = {
-      date: '',
-      leaveType: '',
-      leaveDuration: '',
-      leaveReason: '',
-      leaveHours: '',
-    };
+    const errs = { date: '', leaveType: '', leaveDuration: '', leaveReason: '', leaveHours: '' };
     if (!selectedDateISO) errs.date = 'Please select a date.';
     if (!leaveType) errs.leaveType = 'Please select a leave type.';
     if (!leaveDuration) errs.leaveDuration = 'Please select a duration.';
-
     if (!leaveReason || leaveReason.trim().length === 0) {
       errs.leaveReason = 'Please provide a reason for your leave.';
     } else if (leaveReason.length > 300) {
       errs.leaveReason = 'Reason must be 300 characters or fewer.';
     }
-
     if (leaveDuration === 'partial') {
       if (leaveHours === '' || leaveHours === null) {
         errs.leaveHours = 'Please enter partial hours.';
@@ -346,20 +339,196 @@ export default function Dashboard() {
     console.log('Submitting leave request (frontend only):', payload);
   };
 
-  // Status tab placeholder content
+  // Actions for Status lists
+  const canEditOrDelete = (status) => status !== 'approved';
+  const handleEditWork = (id) => {
+    setDailyLogs((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, status: 'draft' } : it))
+    );
+  };
+  const handleDeleteWork = (id) => {
+    setDailyLogs((prev) => prev.filter((it) => it.id !== id));
+  };
+  const handleEditLeave = (id) => {
+    setLeaveRequests((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, status: 'draft' } : it))
+    );
+  };
+  const handleDeleteLeave = (id) => {
+    setLeaveRequests((prev) => prev.filter((it) => it.id !== id));
+  };
+
+  // Status tab content with sub-tabs and mock lists
   const StatusView = (
     <div className="page">
       <section className="card" aria-label="Status Overview">
-        <div className="card--header-dark">
-          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '0.2px', color: 'var(--on-dark)' }}>
-            Status
+        <div className="card--header-dark" style={{ gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '0.2px', color: 'var(--on-dark)' }}>
+              Status
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--on-dark-muted)' }}>
+              Review your work and leave submissions
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--on-dark-muted)' }}>Overview and activity feed (placeholder)</div>
+          <div className="tabs" role="tablist" aria-label="Status Type">
+            <button
+              className={`tab ${statusSubTab === 'work' ? 'tab--active' : ''}`}
+              role="tab"
+              aria-selected={statusSubTab === 'work'}
+              type="button"
+              onClick={() => setStatusSubTab('work')}
+            >
+              Work Status
+            </button>
+            <button
+              className={`tab ${statusSubTab === 'leave' ? 'tab--active' : ''}`}
+              role="tab"
+              aria-selected={statusSubTab === 'leave'}
+              type="button"
+              onClick={() => setStatusSubTab('leave')}
+            >
+              Leave Status
+            </button>
+          </div>
         </div>
-        <div className="card--body">
-          <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-            This is a placeholder for the Status view. Future: submission state, pending approvals, reminders, etc.
-          </p>
+        <div className="card--body" style={{ background: 'var(--surface-soft)' }}>
+          {statusSubTab === 'work' ? (
+            <div aria-label="Work Status List" style={{ display: 'grid', gap: 8 }}>
+              {dailyLogs.length === 0 ? (
+                <div
+                  style={{
+                    padding: 12,
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  No work logs yet.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflow: 'auto' }}>
+                  {dailyLogs.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr auto auto auto',
+                        gap: 8,
+                        alignItems: 'center',
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '10px 12px',
+                        boxShadow: 'var(--shadow-sm)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                          {formatDateReadable(item.date)} • {item.hours}h
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{item.task}</div>
+                      </div>
+                      <StatusBadge status={item.status} />
+                      {canEditOrDelete(item.status) ? (
+                        <>
+                          <button
+                            className="btn btn--outline btn--sm"
+                            type="button"
+                            onClick={() => handleEditWork(item.id)}
+                            aria-label={`Edit work log ${item.id}`}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn--outline btn--sm"
+                            type="button"
+                            onClick={() => handleDeleteWork(item.id)}
+                            aria-label={`Delete work log ${item.id}`}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Locked</span>
+                          <span />
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div aria-label="Leave Status List" style={{ display: 'grid', gap: 8 }}>
+              {leaveRequests.length === 0 ? (
+                <div
+                  style={{
+                    padding: 12,
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  No leave requests yet.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflow: 'auto' }}>
+                  {leaveRequests.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr auto auto auto',
+                        gap: 8,
+                        alignItems: 'center',
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '10px 12px',
+                        boxShadow: 'var(--shadow-sm)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                          {formatDateReadable(item.date)} • {item.type} • {item.duration === 'full' ? 'Full' : `${item.hours}h`}
+                        </div>
+                      </div>
+                      <StatusBadge status={item.status} />
+                      {canEditOrDelete(item.status) ? (
+                        <>
+                          <button
+                            className="btn btn--outline btn--sm"
+                            type="button"
+                            onClick={() => handleEditLeave(item.id)}
+                            aria-label={`Edit leave request ${item.id}`}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn--outline btn--sm"
+                            type="button"
+                            onClick={() => handleDeleteLeave(item.id)}
+                            aria-label={`Delete leave request ${item.id}`}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Locked</span>
+                          <span />
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -395,15 +564,12 @@ export default function Dashboard() {
           >
             Status
           </button>
-            <span className="chip chip--tint-warn">Updated Just</span>
+          <span className="chip chip--tint-warn">Updated Just</span>
         </div>
 
         <div className="cluster" style={{ flexWrap: 'wrap' }}>
           {/* Role dropdown (disabled) */}
-          <label
-            style={{ fontSize: 13, color: 'var(--text-secondary)' }}
-            htmlFor="role"
-          >
+          <label style={{ fontSize: 13, color: 'var(--text-secondary)' }} htmlFor="role">
             Role:
           </label>
           <select
@@ -475,7 +641,10 @@ export default function Dashboard() {
                 className="btn btn--ghost-onDark btn--sm"
                 type="button"
                 aria-label="New Entry"
-                onClick={() => { setShowEntryPanel(true); setSelectedDateISO(toISO(new Date())); }}
+                onClick={() => {
+                  setShowEntryPanel(true);
+                  setSelectedDateISO(toISO(new Date()));
+                }}
               >
                 New Entry
               </button>
@@ -484,7 +653,9 @@ export default function Dashboard() {
               <div className="grid grid--cols-5" role="list">
                 {stats.map((s, idx) => (
                   <div key={idx} className="stat-pill" role="listitem" aria-label={s.label}>
-                    <span aria-hidden="true" style={{ fontSize: 16, color: 'var(--primary)' }}>{s.icon}</span>
+                    <span aria-hidden="true" style={{ fontSize: 16, color: 'var(--primary)' }}>
+                      {s.icon}
+                    </span>
                     <div>
                       <div className="stat-pill__label">{s.label}</div>
                       <div className="stat-pill__value">{s.value}</div>
@@ -524,14 +695,18 @@ export default function Dashboard() {
                   <div style={{ color: 'var(--on-dark)', fontSize: 12, fontWeight: 600 }} aria-live="polite">
                     {calendarTitle}
                   </div>
-                  <button className="btn btn--ghost-onDark btn--sm" type="button" onClick={onClickToday}>Today</button>
+                  <button className="btn btn--ghost-onDark btn--sm" type="button" onClick={onClickToday}>
+                    Today
+                  </button>
                 </div>
               </div>
 
               <div className="calendar__grid">
                 <div className="calendar__weekdays" role="row">
                   {weekdays.map((w) => (
-                    <div key={w} className="calendar__weekday" role="columnheader">{w}</div>
+                    <div key={w} className="calendar__weekday" role="columnheader">
+                      {w}
+                    </div>
                   ))}
                 </div>
 
@@ -584,12 +759,17 @@ export default function Dashboard() {
                             opacity: isOutsideMonth ? 0.6 : 1,
                           }}
                         >
-                          <div className="calendar__cell-inner" style={{ alignItems: 'flex-start', justifyContent: 'flex-start', padding: 6 }}>
+                          <div
+                            className="calendar__cell-inner"
+                            style={{ alignItems: 'flex-start', justifyContent: 'flex-start', padding: 6 }}
+                          >
                             <div className="calendar__cell-label" style={{ textAlign: 'left' }}>
                               <div className="calendar__cell-sub" style={{ fontWeight: 700 }}>
                                 {d.getDate()}
                               </div>
-                              <div className="calendar__cell-hours" style={{ fontSize: 14, fontWeight: 700 }}>0h</div>
+                              <div className="calendar__cell-hours" style={{ fontSize: 14, fontWeight: 700 }}>
+                                0h
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -606,19 +786,7 @@ export default function Dashboard() {
             {showEntryPanel && (
               <aside className="card" aria-label="New Entry Panel" style={{ background: 'var(--surface)', position: 'relative' }}>
                 <div className="card--header-dark" style={{ justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>New Entry</div>
-                    {/* Visible Close button */}
-                    <button
-                      type="button"
-                      aria-label="Close New Entry"
-                      onClick={onClosePanel}
-                      className="btn btn--ghost-onDark btn--sm"
-                      style={{ height: 28 }}
-                    >
-                      Close
-                    </button>
-                  </div>
+                  {/* Left: Tabs now first in DOM for keyboard order */}
                   <div className="tabs" role="tablist" aria-label="Entry Type">
                     <button
                       className={`tab ${entryMode === 'work' ? 'tab--active' : ''}`}
@@ -637,6 +805,19 @@ export default function Dashboard() {
                       onClick={() => setEntryMode('leave')}
                     >
                       Leave Request
+                    </button>
+                  </div>
+                  {/* Right: Title + Close now moved to right side visually */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>New Entry</div>
+                    <button
+                      type="button"
+                      aria-label="Close New Entry"
+                      onClick={onClosePanel}
+                      className="btn btn--ghost-onDark btn--sm"
+                      style={{ height: 28 }}
+                    >
+                      Close
                     </button>
                   </div>
                 </div>
@@ -671,7 +852,7 @@ export default function Dashboard() {
                         required
                       />
                     </div>
-                    { (entryMode === 'work' ? workErrors.date : leaveErrors.date) ? (
+                    {(entryMode === 'work' ? workErrors.date : leaveErrors.date) ? (
                       <div className="helper" role="alert" style={{ color: 'var(--error)' }}>
                         {entryMode === 'work' ? workErrors.date : leaveErrors.date}
                       </div>
@@ -873,6 +1054,32 @@ export default function Dashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const map = {
+    draft: { bg: 'var(--surface-soft)', color: 'var(--text-secondary)', border: 'var(--border)', label: 'Draft' },
+    approved: { bg: '#E8F5EE', color: '#2A8C58', border: 'rgba(42,140,88,0.25)', label: 'Approved' },
+    rejected: { bg: '#FCEDEA', color: '#C84C3D', border: 'rgba(200,76,61,0.25)', label: 'Rejected' },
+    pending: { bg: 'var(--accent-warn-tint)', color: 'var(--accent-warn)', border: 'rgba(185,133,0,0.25)', label: 'Pending' },
+  };
+  const s = map[status] || map.draft;
+  return (
+    <span
+      style={{
+        justifySelf: 'start',
+        background: s.bg,
+        color: s.color,
+        border: `1px solid ${s.border}`,
+        borderRadius: '999px',
+        padding: '4px 8px',
+        fontSize: 12,
+        fontWeight: 700,
+      }}
+    >
+      {s.label}
+    </span>
   );
 }
 
