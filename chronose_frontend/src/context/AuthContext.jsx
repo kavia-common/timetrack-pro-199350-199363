@@ -4,6 +4,8 @@ import { authApi } from '../lib/supabaseClient';
 /**
  * Auth context for managing Supabase session and user across the app.
  * Listens to auth state changes and provides helper methods.
+ * Gracefully handles missing Supabase envs by initializing with null session
+ * and exposing auth methods that return friendly errors from authApi stubs.
  */
 
 const AuthContext = createContext(null);

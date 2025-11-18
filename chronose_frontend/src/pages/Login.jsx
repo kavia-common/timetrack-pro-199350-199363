@@ -62,6 +62,9 @@ export default function Login() {
     }
   };
 
+  const supabaseConfigured =
+    !!process.env.REACT_APP_SUPABASE_URL && !!process.env.REACT_APP_SUPABASE_ANON_KEY;
+
   return (
     <div style={styles.wrapper}>
       <div style={styles.card} aria-live="polite">
@@ -70,6 +73,13 @@ export default function Login() {
           <h1 style={styles.title}>Chronose</h1>
           <p style={styles.subtitle}>Sign {mode === 'signin' ? 'in' : 'up'} to continue</p>
         </div>
+
+        {!supabaseConfigured && (
+          <div role="alert" style={styles.warn}>
+            Supabase credentials are not configured. Set REACT_APP_SUPABASE_URL and
+            REACT_APP_SUPABASE_ANON_KEY in your environment to enable authentication.
+          </div>
+        )}
 
         {error && <div role="alert" style={styles.error}>{error}</div>}
         {info && <div role="status" style={styles.info}>{info}</div>}
@@ -251,6 +261,15 @@ const styles = {
     background: '#ECFDF5',
     color: '#065F46',
     border: '1px solid #A7F3D0',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    fontSize: 13,
+  },
+  warn: {
+    background: '#FFFBEB',
+    color: '#92400E',
+    border: '1px solid #FDE68A',
     borderRadius: 8,
     padding: 10,
     marginBottom: 8,
