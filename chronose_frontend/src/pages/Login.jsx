@@ -63,7 +63,7 @@ export default function Login() {
   };
 
   const supabaseConfigured =
-    !!process.env.REACT_APP_SUPABASE_URL && !!process.env.REACT_APP_SUPABASE_ANON_KEY;
+    !!process.env.REACT_APP_SUPABASE_URL && !!process.env.REACT_APP_SUPABASE_KEY;
 
   return (
     <div style={styles.wrapper}>
@@ -77,7 +77,7 @@ export default function Login() {
         {!supabaseConfigured && (
           <div role="alert" style={styles.warn}>
             Supabase credentials are not configured. Set REACT_APP_SUPABASE_URL and
-            REACT_APP_SUPABASE_ANON_KEY in your environment to enable authentication.
+            REACT_APP_SUPABASE_KEY in your environment to enable authentication.
           </div>
         )}
 
