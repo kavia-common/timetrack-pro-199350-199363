@@ -3,9 +3,21 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  color: #111827;
+  background: #FFFFFF;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+a {
+  color: #374151;
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
