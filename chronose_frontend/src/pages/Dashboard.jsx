@@ -3,11 +3,8 @@ import { useAuth } from '../context/AuthContext';
 
 /**
  * Employee Dashboard (Timesheet)
- * Implements the post-login UI with:
- * - HeaderBar (pills + time type + Check In + user/logout)
- * - SummaryCard (stats)
- * - CalendarWeek scaffold
- * - Right-side NewEntry panel
+ * Visual refinements to match "Ocean Professional" reference.
+ * No data wiring changes here.
  */
 
 // PUBLIC_INTERFACE
@@ -24,7 +21,6 @@ export default function Dashboard() {
     []
   );
 
-  // Fake stats for UI scaffolding
   const stats = useMemo(
     () => [
       { icon: '⏱️', label: 'Total Hours This Month', value: '0h' },
@@ -36,7 +32,6 @@ export default function Dashboard() {
     []
   );
 
-  // Calendar scaffold state
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const todayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
 
@@ -58,7 +53,7 @@ export default function Dashboard() {
           <span className="chip chip--tint-warn">Updated Just</span>
         </div>
         <div className="cluster">
-          <label style={{fontSize:13,color:'var(--text-secondary)'}}>Time Type:</label>
+          <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Time Type:</label>
           <select
             className="select"
             aria-label="Time Type"
@@ -70,9 +65,15 @@ export default function Dashboard() {
             ))}
           </select>
           <button className="btn btn--primary" type="button">Check In</button>
-          <div style={{width:12}} />
-          <span style={{fontSize:13,color:'var(--text-secondary)'}}>{user?.email}</span>
-          <button className="btn btn--outline" style={{height:32}} onClick={handleLogout} type="button" aria-label="Log out">
+          <div style={{ width: 12 }} />
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{user?.email}</span>
+          <button
+            className="btn btn--outline"
+            style={{ height: 32, padding: '0 12px', borderRadius: 8 }}
+            onClick={handleLogout}
+            type="button"
+            aria-label="Log out"
+          >
             Logout
           </button>
         </div>
@@ -81,11 +82,15 @@ export default function Dashboard() {
       {/* Page container */}
       <div className="page">
         {/* Summary card */}
-        <section className="card" aria-label="Timesheet Logger Summary">
+        <section className="card" aria-label="Timesheet Logger Summary" style={{ background: 'var(--surface-elev)' }}>
           <div className="card--header-dark">
             <div>
-              <div style={{fontSize:14,fontWeight:700,letterSpacing:'0.2px'}}>Timesheet Logger</div>
-              <div style={{fontSize:12,color:'var(--on-dark-muted)'}}>Track your hours easily.</div>
+              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '0.2px', color: 'var(--on-dark)' }}>
+                Timesheet Logger
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--on-dark-muted)', fontWeight: 500 }}>
+                Track your hours easily.
+              </div>
             </div>
             <button className="btn btn--ghost-onDark btn--sm" type="button" aria-label="New Entry">New Entry</button>
           </div>
@@ -93,7 +98,7 @@ export default function Dashboard() {
             <div className="grid grid--cols-5" role="list">
               {stats.map((s, idx) => (
                 <div key={idx} className="stat-pill" role="listitem" aria-label={s.label}>
-                  <span aria-hidden="true" style={{fontSize:16,color:'var(--primary)'}}>{s.icon}</span>
+                  <span aria-hidden="true" style={{ fontSize: 16, color: 'var(--primary)' }}>{s.icon}</span>
                   <div>
                     <div className="stat-pill__label">{s.label}</div>
                     <div className="stat-pill__value">{s.value}</div>
@@ -138,21 +143,21 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-              <div style={{height:12}} />
+              <div style={{ height: 12 }} />
             </div>
           </section>
 
           {/* Right panel - New Entry */}
-          <aside className="card" aria-label="New Entry Panel">
+          <aside className="card" aria-label="New Entry Panel" style={{ background: 'var(--surface)' }}>
             <div className="card--header-dark">
-              <div style={{fontSize:13,fontWeight:700}}>New Entry</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>New Entry</div>
               <div className="tabs" role="tablist" aria-label="Entry Type">
                 <button className="tab tab--active" role="tab" aria-selected="true" type="button">Work Entry</button>
                 <button className="tab" role="tab" aria-selected="false" type="button">Leave Request</button>
               </div>
             </div>
-            <div className="card--body" style={{background:'var(--surface)'}}>
-              <form className="grid" style={{gap:12}}>
+            <div className="card--body" style={{ background: 'var(--surface)' }}>
+              <form className="grid" style={{ gap: 12 }}>
                 <label className="label" htmlFor="project">Project</label>
                 <select id="project" className="select" defaultValue="">
                   <option value="" disabled>Select project</option>
@@ -173,9 +178,9 @@ export default function Dashboard() {
                 <span className="helper">Estimated 40h/week. Calculated automatically.</span>
 
                 <div className="new-entry__footer">
-                  <div style={{display:'flex', gap:8}}>
-                    <button className="btn btn--outline" type="button" style={{height:36}}>Save as Draft</button>
-                    <button className="btn btn--outline" type="button" style={{height:36, color:'var(--text-secondary)'}}>Clear</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn--outline" type="button" style={{ height: 36 }}>Save as Draft</button>
+                    <button className="btn btn--outline" type="button" style={{ height: 36, color: 'var(--text-secondary)' }}>Clear</button>
                   </div>
                   <button className="btn btn--primary" type="button">Submit</button>
                 </div>

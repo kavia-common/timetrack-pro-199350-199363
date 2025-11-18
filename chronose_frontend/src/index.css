@@ -27,6 +27,7 @@
   --radius-md: 10px;
   --radius-lg: 12px;
   --radius-pill: 999px;
+  --gap-xs: 4px;
   --gap-sm: 8px;
   --gap-md: 12px;
   --gap-lg: 16px;
@@ -44,6 +45,8 @@ body {
   background: var(--bg-canvas);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 a { color: var(--text-default); text-decoration: none; }
@@ -64,16 +67,16 @@ code {
 }
 
 .headerbar {
-  height: 56px;
+  height: 56px;              /* matches design */
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--divider);
-  padding: 0 24px;
+  padding: 0 24px;           /* page gutter */
   background: var(--bg-canvas);
 }
 
-.cluster { display: inline-flex; align-items: center; gap: 8px; }
+.cluster { display: inline-flex; align-items: center; gap: 12px; } /* 12px gap per notes */
 
 .chip {
   display: inline-flex;
@@ -90,7 +93,8 @@ code {
 .chip--tint-warn {
   background: var(--accent-warn-tint);
   color: var(--accent-warn);
-  border-color: rgba(185,133,0,0.25);
+  border: 1px solid rgba(185,133,0,0.25);
+  padding: 0 8px; /* slightly slimmer per spec */
 }
 
 .select {
@@ -102,6 +106,11 @@ code {
   color: var(--text-default);
   font-size: 13px;
 }
+.select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(92,58,49,0.15);
+}
 
 .btn {
   height: 36px;
@@ -112,15 +121,21 @@ code {
   font-weight: 700;
   letter-spacing: 0.2px;
   cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .btn--primary { background: var(--primary); color: var(--on-primary); box-shadow: var(--shadow-sm); }
+.btn--primary:hover { background: #4f322b; }
+.btn--primary:active { background: #442b25; }
+.btn--primary:disabled { background: #D8C9C1; color: #F8F4F2; cursor: not-allowed; }
 .btn--ghost-onDark {
-  background: transparent;
+  background: rgba(255,255,255,0.08);
   color: var(--on-dark);
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.20);
 }
+.btn--ghost-onDark:hover { background: rgba(255,255,255,0.14); }
 .btn--outline { background: var(--surface); color: var(--text-strong); border: 1px solid var(--border); }
-.btn--sm { height: 28px; padding: 0 10px; border-radius: var(--radius-sm); font-weight: 600; }
+.btn--outline:hover { background: rgba(92,58,49,0.06); }
+.btn--sm { height: 28px; padding: 0 10px; border-radius: var(--radius-sm); font-weight: 700; }
 
 .card {
   background: var(--surface);
@@ -136,11 +151,11 @@ code {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--pad-lg);
+  padding: 0 12px; /* tighter as per notes */
 }
-.card--body { padding: var(--pad-lg); background: var(--surface-soft); }
+.card--body { padding: 16px; background: var(--surface-soft); } /* body uses 16px */
 
-.grid { display: grid; gap: var(--gap-md); }
+.grid { display: grid; gap: 12px; } /* grid gap baseline 12 */
 .grid--cols-5 { grid-template-columns: repeat(5, 1fr); }
 @media (max-width: 768px) {
   .grid--cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -154,6 +169,7 @@ code {
   display: flex;
   align-items: center;
   gap: 10px;
+  box-shadow: var(--shadow-sm);
 }
 .stat-pill__label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
 .stat-pill__value { font-size: 16px; font-weight: 700; color: var(--text-strong); }
@@ -161,7 +177,7 @@ code {
 .main-split {
   display: grid;
   grid-template-columns: 1fr 360px;
-  gap: var(--gap-lg);
+  gap: 16px;
   margin-top: 16px;
 }
 @media (max-width: 1024px) { .main-split { grid-template-columns: 1fr; } }
@@ -202,8 +218,7 @@ code {
   border-bottom: 1px solid var(--divider);
 }
 .calendar__weekday {
-  padding: 12px;
-  padding-bottom: 8px;
+  padding: 12px 12px 8px 12px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -219,8 +234,8 @@ code {
   border-right: 1px solid var(--divider);
   padding: 10px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
 }
 .calendar__cell:last-child { border-right: none; }
 .calendar__cell-inner {
@@ -231,6 +246,12 @@ code {
   align-items: center;
   justify-content: center;
   border: 1px dashed rgba(0,0,0,0.05);
+  background: transparent;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.calendar__cell-inner:hover {
+  background: rgba(92,58,49,0.04);
+  border-color: rgba(92,58,49,0.12);
 }
 .calendar__cell--current .calendar__cell-inner {
   background: var(--warn-tint);
@@ -239,9 +260,19 @@ code {
 .calendar__cell-label { text-align: center; }
 .calendar__cell-hours { font-size: 16px; font-weight: 700; color: var(--text-strong); }
 .calendar__cell-sub { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+@media (max-width: 640px) {
+  .calendar__cells { min-height: 300px; }
+  .calendar__weekday { padding: 10px 10px 6px 10px; font-size: 11px; }
+}
 
-/* Form controls for New Entry */
-.label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; display: inline-block; }
+.label { 
+  font-size: 12px; 
+  font-weight: 600; 
+  color: var(--text-secondary); 
+  margin-bottom: 6px; 
+  display: inline-block; 
+  letter-spacing: 0.1px;
+}
 .input, .select, .textarea {
   width: 100%;
   background: var(--surface-soft);
@@ -252,6 +283,11 @@ code {
   font-size: 14px;
   color: var(--text-default);
   outline: none;
+  transition: box-shadow .15s ease, border-color .15s ease;
+}
+.input:focus, .select:focus, .textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(92,58,49,0.15);
 }
 .textarea { height: 90px; padding: 10px 12px; resize: vertical; }
 .helper { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
@@ -261,4 +297,10 @@ code {
   gap: 8px;
   justify-content: space-between;
   margin-top: 8px;
+}
+
+/* Accessibility focus outline for buttons and tabs */
+.btn:focus-visible, .tab:focus-visible, .chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
