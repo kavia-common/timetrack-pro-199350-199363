@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
  * - Adds a live timer widget with Check In/Check Out and shows last session duration.
  * - Adds a Role dropdown set to "Employee" (disabled for now).
  * - Keeps everything frontend-only; no backend wiring.
- * - New Entry form: adds prominent read-only date label synced with a date picker, and a required Hours worked numeric input.
+ * - New Entry form: adds tabs for Work Entry and Leave Request with validation and Ocean Professional styling.
  */
 
 // PUBLIC_INTERFACE
@@ -28,14 +28,31 @@ export default function Dashboard() {
   // Role dropdown (disabled for now; default Employee)
   const [role] = useState('employee');
 
-  // New Entry local state
+  // Shared date context for both Work Entry and Leave Request
   const todayISO = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
   const [entryDate, setEntryDate] = useState(todayISO);
+
+  // Work Entry local state
   const [hours, setHours] = useState(''); // string for input control
-  const [errors, setErrors] = useState({ hours: '', date: '' });
+  const [workErrors, setWorkErrors] = useState({ hours: '', date: '' });
   const [notes, setNotes] = useState('');
   const [project, setProject] = useState('');
   const [task, setTask] = useState('');
+
+  // Leave Request local state
+  const [entryMode, setEntryMode] = useState('work'); // 'work' | 'leave'
+  const [leaveType, setLeaveType] = useState('casual'); // casual | sick | vacation
+  const [leaveDuration, setLeaveDuration] = useState('full'); // full | partial
+  const [leaveHours, setLeaveHours] = useState(''); // 0-8 for partial
+  const [leaveReason, setLeaveReason] = useState('');
+  const [leaveErrors, setLeaveErrors] = useState({
+    date: '',
+    leaveType: '',
+    leaveDuration: '',
+    leaveReason: '',
+    leaveHours: '',
+  });
+  const LEAVE_MAX_HOURS = 8;
 
   // Timer effect
   useEffect(() => {
@@ -108,27 +125,26 @@ export default function Dashboard() {
     }
   };
 
-  // Validate hours input
+  // Validate hours input for Work Entry
   const validateHours = (val) => {
     if (val === '' || val === null || val === undefined) return 'Please enter hours worked.';
     const num = Number(val);
     if (Number.isNaN(num)) return 'Hours must be a number.';
     if (num < 0) return 'Hours cannot be negative.';
     if (num > 24) return 'Hours cannot exceed 24.';
-    // Allow 0.25 increments commonly, but we just allow decimals generally
     return '';
   };
 
   const onHoursChange = (e) => {
     const val = e.target.value;
-    // allow empty value to let user type
     setHours(val);
-    setErrors((prev) => ({ ...prev, hours: '' }));
+    setWorkErrors((prev) => ({ ...prev, hours: '' }));
   };
 
   const onDateChange = (e) => {
     setEntryDate(e.target.value || todayISO);
-    setErrors((prev) => ({ ...prev, date: '' }));
+    setWorkErrors((prev) => ({ ...prev, date: '' }));
+    setLeaveErrors((prev) => ({ ...prev, date: '' }));
   };
 
   const onClear = () => {
@@ -137,21 +153,45 @@ export default function Dashboard() {
     setNotes('');
     setHours('');
     setEntryDate(todayISO);
-    setErrors({ hours: '', date: '' });
+    setWorkErrors({ hours: '', date: '' });
+
+    // Leave form clears
+    setLeaveType('casual');
+    setLeaveDuration('full');
+    setLeaveHours('');
+    setLeaveReason('');
+    setLeaveErrors({
+      date: '',
+      leaveType: '',
+      leaveDuration: '',
+      leaveReason: '',
+      leaveHours: '',
+    });
   };
 
   const onSaveDraft = () => {
-    // Capture state; in MVP we just log it
     // eslint-disable-next-line no-console
-    console.log('Draft saved (local only):', { project, task, notes, hours: Number(hours), date: entryDate });
+    if (entryMode === 'work') {
+      console.log('Draft saved (work, local only):', {
+        project, task, notes, hours: hours === '' ? null : Number(hours), date: entryDate,
+      });
+    } else {
+      console.log('Draft saved (leave, local only):', {
+        date: entryDate,
+        leaveType,
+        leaveDuration,
+        leaveHours: leaveDuration === 'partial' ? Number(leaveHours || 0) : LEAVE_MAX_HOURS,
+        leaveReason,
+      });
+    }
   };
 
-  const onSubmit = (e) => {
+  const onSubmitWork = (e) => {
     e.preventDefault();
     const hourErr = validateHours(hours);
     const dateErr = entryDate ? '' : 'Please select a date.';
     const nextErrors = { hours: hourErr, date: dateErr };
-    setErrors(nextErrors);
+    setWorkErrors(nextErrors);
     if (hourErr || dateErr) return;
 
     const payload = {
@@ -162,7 +202,59 @@ export default function Dashboard() {
       date: entryDate,
     };
     // eslint-disable-next-line no-console
-    console.log('Submitting entry (frontend only):', payload);
+    console.log('Submitting work entry (frontend only):', payload);
+  };
+
+  // PUBLIC_INTERFACE
+  const validateLeave = () => {
+    /** Validate leave request fields; returns object with errors. */
+    const errs = {
+      date: '',
+      leaveType: '',
+      leaveDuration: '',
+      leaveReason: '',
+      leaveHours: '',
+    };
+    if (!entryDate) errs.date = 'Please select a date.';
+    if (!leaveType) errs.leaveType = 'Please select a leave type.';
+    if (!leaveDuration) errs.leaveDuration = 'Please select a duration.';
+
+    // Duration selected -> reason required
+    if (!leaveReason || leaveReason.trim().length === 0) {
+      errs.leaveReason = 'Please provide a reason for your leave.';
+    } else if (leaveReason.length > 300) {
+      errs.leaveReason = 'Reason must be 300 characters or fewer.';
+    }
+
+    if (leaveDuration === 'partial') {
+      if (leaveHours === '' || leaveHours === null) {
+        errs.leaveHours = 'Please enter partial hours.';
+      } else {
+        const h = Number(leaveHours);
+        if (Number.isNaN(h)) errs.leaveHours = 'Hours must be a number.';
+        else if (h < 0) errs.leaveHours = 'Hours cannot be negative.';
+        else if (h > LEAVE_MAX_HOURS) errs.leaveHours = `Hours cannot exceed ${LEAVE_MAX_HOURS}.`;
+      }
+    }
+    return errs;
+  };
+
+  const onSubmitLeave = (e) => {
+    e.preventDefault();
+    const errs = validateLeave();
+    setLeaveErrors(errs);
+    const hasErr = Object.values(errs).some(Boolean);
+    if (hasErr) return;
+
+    const payload = {
+      date: entryDate,
+      leaveType,
+      leaveDuration,
+      leaveHours: leaveDuration === 'partial' ? Number(leaveHours || 0) : LEAVE_MAX_HOURS,
+      leaveReason: leaveReason.trim(),
+    };
+    // eslint-disable-next-line no-console
+    console.log('Submitting leave request (frontend only):', payload);
   };
 
   // Status tab placeholder content
@@ -336,123 +428,257 @@ export default function Dashboard() {
               </div>
             </section>
 
-            {/* Right panel - New Entry */}
+            {/* Right panel - New Entry with tabs for Work and Leave */}
             <aside className="card" aria-label="New Entry Panel" style={{ background: 'var(--surface)' }}>
               <div className="card--header-dark">
                 <div style={{ fontSize: 13, fontWeight: 700 }}>New Entry</div>
                 <div className="tabs" role="tablist" aria-label="Entry Type">
-                  <button className="tab tab--active" role="tab" aria-selected="true" type="button">Work Entry</button>
-                  <button className="tab" role="tab" aria-selected="false" type="button">Leave Request</button>
+                  <button
+                    className={`tab ${entryMode === 'work' ? 'tab--active' : ''}`}
+                    role="tab"
+                    aria-selected={entryMode === 'work'}
+                    type="button"
+                    onClick={() => setEntryMode('work')}
+                  >
+                    Work Entry
+                  </button>
+                  <button
+                    className={`tab ${entryMode === 'leave' ? 'tab--active' : ''}`}
+                    role="tab"
+                    aria-selected={entryMode === 'leave'}
+                    type="button"
+                    onClick={() => setEntryMode('leave')}
+                  >
+                    Leave Request
+                  </button>
                 </div>
               </div>
               <div className="card--body" style={{ background: 'var(--surface)' }}>
-                <form className="grid" style={{ gap: 12 }} onSubmit={onSubmit} noValidate>
-                  {/* Prominent entry date display + selector */}
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div className="label" id="entry-date-label">Entry Date</div>
-                    <div
-                      role="text"
-                      aria-labelledby="entry-date-label"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        background: 'var(--surface-soft)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '8px 12px',
-                        boxShadow: 'var(--shadow-sm)',
-                      }}
-                    >
-                      <span style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
-                        {formatDateReadable(entryDate)}
-                      </span>
-                      {/* Keep in sync: date input controls the label */}
-                      <input
-                        aria-label="Select date for this entry"
-                        type="date"
-                        className="input"
-                        value={entryDate}
-                        onChange={onDateChange}
-                        style={{ width: 150, height: 30 }}
-                        required
-                      />
-                    </div>
-                    {errors.date ? (
-                      <div className="helper" role="alert" style={{ color: 'var(--error)' }}>{errors.date}</div>
-                    ) : (
-                      <div className="helper">Choose the day this entry applies to. Defaults to today.</div>
-                    )}
+                {/* Shared Date Display */}
+                <div style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+                  <div className="label" id="entry-date-label">Entry Date</div>
+                  <div
+                    role="text"
+                    aria-labelledby="entry-date-label"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'var(--surface-soft)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 12px',
+                      boxShadow: 'var(--shadow-sm)',
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                      {formatDateReadable(entryDate)}
+                    </span>
+                    <input
+                      aria-label="Select date for this entry"
+                      type="date"
+                      className="input"
+                      value={entryDate}
+                      onChange={onDateChange}
+                      style={{ width: 150, height: 30 }}
+                      required
+                    />
                   </div>
-
-                  <label className="label" htmlFor="project">Project</label>
-                  <select id="project" className="select" value={project} onChange={(e) => setProject(e.target.value)}>
-                    <option value="" disabled>Select project</option>
-                    <option value="chronose">Chronose</option>
-                  </select>
-
-                  <label className="label" htmlFor="task">Task</label>
-                  <select id="task" className="select" value={task} onChange={(e) => setTask(e.target.value)}>
-                    <option value="" disabled>Select task</option>
-                    <option value="planning">Planning</option>
-                    <option value="testing">Testing</option>
-                    <option value="meetings">Meetings</option>
-                  </select>
-
-                  {/* Hours worked numeric input */}
-                  <label className="label" htmlFor="hours">Hours Worked</label>
-                  <input
-                    id="hours"
-                    className="input"
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="e.g., 7.5"
-                    min="0"
-                    max="24"
-                    step="0.25"
-                    value={hours}
-                    onChange={onHoursChange}
-                    required
-                    aria-describedby="hours-help"
-                  />
-                  {errors.hours ? (
-                    <div id="hours-help" className="helper" role="alert" style={{ color: 'var(--error)' }}>
-                      {errors.hours}
+                  { (entryMode === 'work' ? workErrors.date : leaveErrors.date) ? (
+                    <div className="helper" role="alert" style={{ color: 'var(--error)' }}>
+                      {entryMode === 'work' ? workErrors.date : leaveErrors.date}
                     </div>
                   ) : (
-                    <div id="hours-help" className="helper">
-                      Enter hours as a decimal. Example: 7.5 for 7 hours 30 minutes. Min 0, Max 24.
-                    </div>
+                    <div className="helper">Choose the day this entry applies to. Defaults to today.</div>
                   )}
+                </div>
 
-                  <label className="label" htmlFor="notes">Notes</label>
-                  <textarea
-                    id="notes"
-                    className="textarea"
-                    placeholder="Optional notes..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                  />
+                {entryMode === 'work' ? (
+                  <form className="grid" style={{ gap: 12 }} onSubmit={onSubmitWork} noValidate aria-label="Work Entry Form">
+                    <label className="label" htmlFor="project">Project</label>
+                    <select id="project" className="select" value={project} onChange={(e) => setProject(e.target.value)}>
+                      <option value="" disabled>Select project</option>
+                      <option value="chronose">Chronose</option>
+                    </select>
 
-                  <span className="helper">Estimated 40h/week. Calculated automatically.</span>
+                    <label className="label" htmlFor="task">Task</label>
+                    <select id="task" className="select" value={task} onChange={(e) => setTask(e.target.value)}>
+                      <option value="" disabled>Select task</option>
+                      <option value="planning">Planning</option>
+                      <option value="testing">Testing</option>
+                      <option value="meetings">Meetings</option>
+                    </select>
 
-                  <div className="new-entry__footer">
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn--outline" type="button" style={{ height: 36 }} onClick={onSaveDraft}>
-                        Save as Draft
-                      </button>
-                      <button
-                        className="btn btn--outline"
-                        type="button"
-                        style={{ height: 36, color: 'var(--text-secondary)' }}
-                        onClick={onClear}
-                      >
-                        Clear
-                      </button>
+                    {/* Hours worked numeric input */}
+                    <label className="label" htmlFor="hours">Hours Worked</label>
+                    <input
+                      id="hours"
+                      className="input"
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="e.g., 7.5"
+                      min="0"
+                      max="24"
+                      step="0.25"
+                      value={hours}
+                      onChange={onHoursChange}
+                      required
+                      aria-describedby="hours-help"
+                    />
+                    {workErrors.hours ? (
+                      <div id="hours-help" className="helper" role="alert" style={{ color: 'var(--error)' }}>
+                        {workErrors.hours}
+                      </div>
+                    ) : (
+                      <div id="hours-help" className="helper">
+                        Enter hours as a decimal. Example: 7.5 for 7 hours 30 minutes. Min 0, Max 24.
+                      </div>
+                    )}
+
+                    <label className="label" htmlFor="notes">Notes</label>
+                    <textarea
+                      id="notes"
+                      className="textarea"
+                      placeholder="Optional notes..."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                    />
+
+                    <span className="helper">Estimated 40h/week. Calculated automatically.</span>
+
+                    <div className="new-entry__footer">
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn--outline" type="button" style={{ height: 36 }} onClick={onSaveDraft}>
+                          Save as Draft
+                        </button>
+                        <button
+                          className="btn btn--outline"
+                          type="button"
+                          style={{ height: 36, color: 'var(--text-secondary)' }}
+                          onClick={onClear}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <button className="btn btn--primary" type="submit">Submit</button>
                     </div>
-                    <button className="btn btn--primary" type="submit">Submit</button>
-                  </div>
-                </form>
+                  </form>
+                ) : (
+                  // Leave Request Form
+                  <form className="grid" style={{ gap: 12 }} onSubmit={onSubmitLeave} noValidate aria-label="Leave Request Form">
+                    {/* Leave Type */}
+                    <label className="label" htmlFor="leave-type">Leave Type</label>
+                    <select
+                      id="leave-type"
+                      className="select"
+                      value={leaveType}
+                      onChange={(e) => { setLeaveType(e.target.value); setLeaveErrors((p)=>({ ...p, leaveType: '' })); }}
+                      required
+                    >
+                      <option value="casual">Casual</option>
+                      <option value="sick">Sick</option>
+                      <option value="vacation">Vacation</option>
+                    </select>
+                    {leaveErrors.leaveType ? (
+                      <div className="helper" role="alert" style={{ color: 'var(--error)' }}>{leaveErrors.leaveType}</div>
+                    ) : (
+                      <div className="helper">Choose the leave category.</div>
+                    )}
+
+                    {/* Duration */}
+                    <label className="label" htmlFor="leave-duration">Duration</label>
+                    <select
+                      id="leave-duration"
+                      className="select"
+                      value={leaveDuration}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setLeaveDuration(v);
+                        setLeaveErrors((p)=>({ ...p, leaveDuration: '', leaveHours: '' }));
+                        if (v === 'full') setLeaveHours('');
+                      }}
+                      required
+                    >
+                      <option value="full">Full day</option>
+                      <option value="partial">Partial day</option>
+                    </select>
+                    {leaveErrors.leaveDuration ? (
+                      <div className="helper" role="alert" style={{ color: 'var(--error)' }}>{leaveErrors.leaveDuration}</div>
+                    ) : (
+                      <div className="helper">Select full day or partial day leave.</div>
+                    )}
+
+                    {/* Partial hours field (conditional) */}
+                    {leaveDuration === 'partial' && (
+                      <>
+                        <label className="label" htmlFor="leave-hours">Hours</label>
+                        <input
+                          id="leave-hours"
+                          className="input"
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          max={LEAVE_MAX_HOURS}
+                          step="0.25"
+                          placeholder={`0–${LEAVE_MAX_HOURS}`}
+                          value={leaveHours}
+                          onChange={(e) => { setLeaveHours(e.target.value); setLeaveErrors((p)=>({ ...p, leaveHours: '' })); }}
+                          required={leaveDuration === 'partial'}
+                          aria-describedby="leave-hours-help"
+                        />
+                        {leaveErrors.leaveHours ? (
+                          <div id="leave-hours-help" className="helper" role="alert" style={{ color: 'var(--error)' }}>
+                            {leaveErrors.leaveHours}
+                          </div>
+                        ) : (
+                          <div id="leave-hours-help" className="helper">Enter hours between 0 and {LEAVE_MAX_HOURS}.</div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Reason with char count and validation */}
+                    <label className="label" htmlFor="leave-reason">Reason</label>
+                    <textarea
+                      id="leave-reason"
+                      className="textarea"
+                      placeholder="Describe the reason for your leave…"
+                      value={leaveReason}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v.length <= 300) setLeaveReason(v);
+                        setLeaveErrors((p)=>({ ...p, leaveReason: '' }));
+                      }}
+                      required
+                      aria-describedby="leave-reason-help"
+                    />
+                    <div id="leave-reason-help" className="helper" aria-live="polite">
+                      {leaveErrors.leaveReason ? (
+                        <span role="alert" style={{ color: 'var(--error)' }}>{leaveErrors.leaveReason}</span>
+                      ) : (
+                        <>
+                          Reason is required. <span>{leaveReason.length}</span>/300 characters.
+                        </>
+                      )}
+                    </div>
+
+                    <div className="new-entry__footer">
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn--outline" type="button" style={{ height: 36 }} onClick={onSaveDraft}>
+                          Save as Draft
+                        </button>
+                        <button
+                          className="btn btn--outline"
+                          type="button"
+                          style={{ height: 36, color: 'var(--text-secondary)' }}
+                          onClick={onClear}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <button className="btn btn--primary" type="submit">Submit</button>
+                    </div>
+                  </form>
+                )}
               </div>
             </aside>
           </div>
