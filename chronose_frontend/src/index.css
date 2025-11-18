@@ -304,3 +304,18 @@ code {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* Header chip buttons behave as controls */
+.chip {
+  background: var(--surface-soft);
+}
+.chip:disabled { opacity: 0.6; }
+
+/* Timer widget responsiveness: allow wrap under narrow widths */
+@media (max-width: 640px) {
+  .headerbar {
+    padding: 0 16px;
+    gap: 8px;
+  }
+  .cluster { gap: 8px; }
+}
