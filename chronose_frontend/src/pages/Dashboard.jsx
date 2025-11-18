@@ -3,10 +3,8 @@ import { useAuth } from '../context/AuthContext';
 
 /**
  * Employee Dashboard (Timesheet + Status)
- * Enhancements in this iteration:
- * - Swap Close button and Work/Leave tabs positions in New Entry panel header.
- * - Add Status tab with sub-tabs: Work Status and Leave Status, showing mock lists with Edit/Delete actions.
- * - Maintain Ocean Professional styling and accessible focus order.
+ * This version wires Edit actions to open the New Entry panel for the selected date
+ * and implements a per-day persistent Check In/Out timer with 12h auto-checkout.
  */
 
 // PUBLIC_INTERFACE
@@ -16,10 +14,12 @@ export default function Dashboard() {
   // Header tabs: 'timesheet' | 'status'
   const [activeTab, setActiveTab] = useState('timesheet');
 
-  // Timer state (in-memory only)
+  // Timer state with persistence
   const [isRunning, setIsRunning] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [lastSession, setLastSession] = useState(0);
+  const [elapsed, setElapsed] = useState(0); // seconds for current running session
+  const [lastSession, setLastSession] = useState(0); // seconds of most recent completed session
+  const [todayTotal, setTodayTotal] = useState(0); // aggregate seconds for selected/current date
+  const [autoCheckoutBanner, setAutoCheckoutBanner] = useState(null); // { message, dateISO } | null
   const tickRef = useRef(null);
 
   // Role dropdown (disabled for now; default Employee)
@@ -78,39 +78,38 @@ export default function Dashboard() {
     setEntryDate(selectedDateISO);
   }, [selectedDateISO]);
 
-  // Timer effect
-  useEffect(() => {
-    if (isRunning) {
-      tickRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-    } else if (tickRef.current) {
-      clearInterval(tickRef.current);
-      tickRef.current = null;
-    }
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [isRunning]);
+  // ========= Timer Utilities (frontend-only persistence) =========
+  const STORAGE_KEY = 'chronose_timer_v1';
 
-  const stats = useMemo(
-    () => [
-      { icon: '⏱️', label: 'Total Hours This Month', value: '0h' },
-      { icon: '📅', label: 'Working Days', value: '0d' },
-      { icon: '🕒', label: 'Avg Hours/Day', value: '0.0h' },
-      { icon: '⚡', label: 'Overtime', value: '0h' },
-      { icon: '🍃', label: 'Leaves Taken', value: '0' },
-    ],
-    []
-  );
-
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  const handleLogout = async () => {
+  const loadTimerState = () => {
     try {
-      await signOut();
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Logout failed', e);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : { byDate: {} };
+    } catch {
+      return { byDate: {} };
     }
+  };
+
+  const saveTimerState = (state) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const getDayState = (iso) => {
+    const data = loadTimerState();
+    return data.byDate?.[iso] || { sessions: [], running: null, total: 0 };
+  };
+
+  const setDayState = (iso, updater) => {
+    const data = loadTimerState();
+    const prev = data.byDate?.[iso] || { sessions: [], running: null, total: 0 };
+    const next = updater(prev);
+    data.byDate = { ...(data.byDate || {}), [iso]: next };
+    saveTimerState(data);
+    return next;
   };
 
   // PUBLIC_INTERFACE
@@ -123,20 +122,112 @@ export default function Dashboard() {
     return `${pad(h)}:${pad(m)}:${pad(s)}`;
   };
 
+  const recalcTodayTotal = (iso) => {
+    const day = getDayState(iso);
+    const sessionsTotal = (day.sessions || []).reduce((acc, s) => acc + Math.max(0, Math.floor((s.end - s.start) / 1000)), 0);
+    setTodayTotal(sessionsTotal);
+  };
+
+  // On mount, detect stale running session and close it at 12h
+  useEffect(() => {
+    const iso = todayISO;
+    const day = getDayState(iso);
+    if (day.running) {
+      const startMs = day.running.start;
+      const now = Date.now();
+      const maxEnd = startMs + 12 * 3600 * 1000; // 12 hours cap
+      if (now >= maxEnd) {
+        // Auto close at 12h mark
+        const capped = maxEnd;
+        const next = setDayState(iso, (prev) => {
+          const prevSessions = prev.sessions || [];
+          return {
+            ...prev,
+            sessions: [...prevSessions, { start: startMs, end: capped }],
+            running: null,
+          };
+        });
+        const added = Math.floor((capped - startMs) / 1000);
+        setLastSession(added);
+        setIsRunning(false);
+        setElapsed(0);
+        setAutoCheckoutBanner({
+          message: 'Automatically checked out after 12 hours to prevent stale session.',
+          dateISO: iso,
+        });
+        // Recalculate aggregate
+        const sessionsTotal = (next.sessions || []).reduce((acc, s) => acc + Math.max(0, Math.floor((s.end - s.start) / 1000)), 0);
+        setTodayTotal(sessionsTotal);
+      } else {
+        // Resume running session
+        setIsRunning(true);
+        setElapsed(Math.floor((now - startMs) / 1000));
+        recalcTodayTotal(iso);
+      }
+    } else {
+      recalcTodayTotal(iso);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Timer ticking effect for running session
+  useEffect(() => {
+    if (isRunning) {
+      tickRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } else if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    return () => {
+      if (tickRef.current) clearInterval(tickRef.current);
+    };
+  }, [isRunning]);
+
   const handleCheckIn = () => {
-    if (!isRunning) {
-      setElapsed(0);
+    if (isRunning) return;
+    const iso = todayISO;
+    const now = Date.now();
+    // If there is an existing running for today, ignore; else start
+    const day = getDayState(iso);
+    if (!day.running) {
+      setDayState(iso, (prev) => ({ ...prev, running: { start: now } }));
       setIsRunning(true);
+      setElapsed(0);
+      // Today total remains same during the run; will update on checkout
     }
   };
 
   const handleCheckOut = () => {
-    if (isRunning) {
+    if (!isRunning) return;
+    const iso = todayISO;
+    const now = Date.now();
+    const current = getDayState(iso);
+    if (current.running?.start) {
+      const startMs = current.running.start;
+      const dur = Math.max(0, Math.floor((now - startMs) / 1000));
+      const next = setDayState(iso, (prev) => {
+        const prevSessions = prev.sessions || [];
+        return {
+          ...prev,
+          sessions: [...prevSessions, { start: startMs, end: now }],
+          running: null,
+        };
+      });
       setIsRunning(false);
-      setLastSession(elapsed);
+      setLastSession(dur);
       setElapsed(0);
+      // Recalc aggregate
+      const sessionsTotal = (next.sessions || []).reduce((acc, s) => acc + Math.max(0, Math.floor((s.end - s.start) / 1000)), 0);
+      setTodayTotal(sessionsTotal);
     }
   };
+
+  // When selected date changes, display its aggregated total (not only today)
+  useEffect(() => {
+    const day = getDayState(selectedDateISO);
+    const sessionsTotal = (day.sessions || []).reduce((acc, s) => acc + Math.max(0, Math.floor((s.end - s.start) / 1000)), 0);
+    setTodayTotal(sessionsTotal);
+  }, [selectedDateISO]);
 
   // Helpers
   function toISO(d) {
@@ -158,7 +249,7 @@ export default function Dashboard() {
   const getStartOfWeek = (date) => {
     const d = new Date(date);
     const day = d.getDay(); // 0=Sun .. 6=Sat
-    const diffToMon = ((day + 6) % 7);
+    const diffToMon = (day + 6) % 7;
     const monday = new Date(d);
     monday.setDate(d.getDate() - diffToMon);
     monday.setHours(0, 0, 0, 0);
@@ -208,6 +299,16 @@ export default function Dashboard() {
   const onClickToday = () => {
     const iso = toISO(new Date());
     setSelectedDateISO(iso);
+  };
+
+  // Logout handler used by header action
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Logout failed', e);
+    }
   };
 
   const onDateChange = (e) => {
@@ -341,18 +442,26 @@ export default function Dashboard() {
 
   // Actions for Status lists
   const canEditOrDelete = (status) => status !== 'approved';
+
+  // Wire Edit actions to open panel and set date + tab
   const handleEditWork = (id) => {
-    setDailyLogs((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, status: 'draft' } : it))
-    );
+    const it = dailyLogs.find((x) => x.id === id);
+    if (!it) return;
+    setSelectedDateISO(it.date);
+    setEntryMode('work');
+    setShowEntryPanel(true);
+    setActiveTab('timesheet');
   };
   const handleDeleteWork = (id) => {
     setDailyLogs((prev) => prev.filter((it) => it.id !== id));
   };
   const handleEditLeave = (id) => {
-    setLeaveRequests((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, status: 'draft' } : it))
-    );
+    const it = leaveRequests.find((x) => x.id === id);
+    if (!it) return;
+    setSelectedDateISO(it.date);
+    setEntryMode('leave');
+    setShowEntryPanel(true);
+    setActiveTab('timesheet');
   };
   const handleDeleteLeave = (id) => {
     setLeaveRequests((prev) => prev.filter((it) => it.id !== id));
@@ -534,6 +643,17 @@ export default function Dashboard() {
     </div>
   );
 
+  const stats = useMemo(
+    () => [
+      { icon: '⏱️', label: 'Total Hours This Month', value: '0h' },
+      { icon: '📅', label: 'Working Days', value: '0d' },
+      { icon: '🕒', label: 'Avg Hours/Day', value: '0.0h' },
+      { icon: '⚡', label: 'Overtime', value: '0h' },
+      { icon: '🍃', label: 'Leaves Taken', value: '0' },
+    ],
+    []
+  );
+
   // Calendar header label (range or month title)
   const calendarTitle =
     calendarView === 'week'
@@ -600,11 +720,10 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
-            {lastSession > 0 ? (
-              <div style={timerStyles.last} aria-label="Last session duration">
-                Last: {formatHMS(lastSession)}
-              </div>
-            ) : null}
+            <div style={timerStyles.last} aria-live="polite">
+              <span style={{ marginRight: 8 }}>Last session: {lastSession > 0 ? formatHMS(lastSession) : '—'}</span>
+              <span>Today total: {formatHMS(todayTotal)}</span>
+            </div>
           </div>
 
           <div style={{ width: 8 }} />
@@ -620,6 +739,22 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* Auto-checkout non-blocking toast/banner */}
+      {autoCheckoutBanner && (
+        <div role="status" aria-live="polite" style={toastStyles.banner}>
+          <div>{autoCheckoutBanner.message}</div>
+          <button
+            type="button"
+            className="btn btn--outline btn--sm"
+            onClick={() => setAutoCheckoutBanner(null)}
+            aria-label="Dismiss notification"
+            style={{ height: 28 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* View routing */}
       {activeTab === 'status' ? (
@@ -703,7 +838,7 @@ export default function Dashboard() {
 
               <div className="calendar__grid">
                 <div className="calendar__weekdays" role="row">
-                  {weekdays.map((w) => (
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => (
                     <div key={w} className="calendar__weekday" role="columnheader">
                       {w}
                     </div>
@@ -715,7 +850,11 @@ export default function Dashboard() {
                   <div className="calendar__cells" role="row">
                     {weekDates.map((d) => {
                       const iso = toISO(d);
-                      const isSelected = isSameDayISO(iso, selectedDateISO);
+                      const isSelected = iso === selectedDateISO;
+                      // show daily aggregated hours if any
+                      const day = getDayState(iso);
+                      const sessionsTotal = (day.sessions || []).reduce((acc, s) => acc + Math.max(0, Math.floor((s.end - s.start) / 1000)), 0);
+                      const totalHrs = Math.floor(sessionsTotal / 3600);
                       return (
                         <div
                           key={iso}
@@ -727,7 +866,7 @@ export default function Dashboard() {
                         >
                           <div className="calendar__cell-inner">
                             <div className="calendar__cell-label">
-                              <div className="calendar__cell-hours">0h</div>
+                              <div className="calendar__cell-hours">{totalHrs}h</div>
                               <div className="calendar__cell-sub">
                                 {d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                               </div>
@@ -744,8 +883,11 @@ export default function Dashboard() {
                   <div className="calendar__cells" role="row" style={{ gridAutoRows: 'minmax(56px, 1fr)' }}>
                     {monthGridDates.map((d) => {
                       const iso = toISO(d);
-                      const isSelected = isSameDayISO(iso, selectedDateISO);
+                      const isSelected = iso === selectedDateISO;
                       const isOutsideMonth = d < monthFirst || d > monthLast;
+                      const day = getDayState(iso);
+                      const sessionsTotal = (day.sessions || []).reduce((acc, s) => acc + Math.max(0, Math.floor((s.end - s.start) / 1000)), 0);
+                      const totalHrs = Math.floor(sessionsTotal / 3600);
                       return (
                         <div
                           key={iso}
@@ -768,7 +910,7 @@ export default function Dashboard() {
                                 {d.getDate()}
                               </div>
                               <div className="calendar__cell-hours" style={{ fontSize: 14, fontWeight: 700 }}>
-                                0h
+                                {totalHrs}h
                               </div>
                             </div>
                           </div>
@@ -1112,5 +1254,24 @@ const timerStyles = {
     fontSize: 12,
     color: 'var(--text-secondary)',
     paddingLeft: 4,
+  },
+};
+
+const toastStyles = {
+  banner: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 5,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: '8px 12px',
+    margin: '8px 24px',
+    background: 'var(--warn-tint)',
+    border: '1px solid var(--warn)',
+    borderRadius: 10,
+    color: 'var(--text-strong)',
+    boxShadow: 'var(--shadow-sm)',
   },
 };
