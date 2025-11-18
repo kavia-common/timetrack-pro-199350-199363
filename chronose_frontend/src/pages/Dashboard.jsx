@@ -1,13 +1,44 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 /**
- * Basic dashboard placeholder with a top bar and logout action.
+ * Employee Dashboard (Timesheet)
+ * Implements the post-login UI with:
+ * - HeaderBar (pills + time type + Check In + user/logout)
+ * - SummaryCard (stats)
+ * - CalendarWeek scaffold
+ * - Right-side NewEntry panel
  */
 
 // PUBLIC_INTERFACE
 export default function Dashboard() {
   const { user, signOut } = useAuth();
+
+  const [timeType, setTimeType] = useState('onsite');
+  const timeTypeOptions = useMemo(
+    () => [
+      { label: 'On Site', value: 'onsite' },
+      { label: 'Remote', value: 'remote' },
+      { label: 'Hybrid', value: 'hybrid' },
+    ],
+    []
+  );
+
+  // Fake stats for UI scaffolding
+  const stats = useMemo(
+    () => [
+      { icon: '⏱️', label: 'Total Hours This Month', value: '0h' },
+      { icon: '📅', label: 'Working Days', value: '0d' },
+      { icon: '🕒', label: 'Avg Hours/Day', value: '0.0h' },
+      { icon: '⚡', label: 'Overtime', value: '0h' },
+      { icon: '🍃', label: 'Leaves Taken', value: '0' },
+    ],
+    []
+  );
+
+  // Calendar scaffold state
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const todayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
 
   const handleLogout = async () => {
     try {
@@ -19,81 +50,140 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={styles.layout}>
-      <header style={styles.topbar}>
-        <div style={styles.brand}>Chronose</div>
-        <div style={styles.userArea}>
-          <span style={styles.userEmail}>{user?.email}</span>
-          <button style={styles.logoutBtn} onClick={handleLogout} aria-label="Log out">
+    <div>
+      {/* Top utility bar */}
+      <div className="headerbar">
+        <div className="cluster" aria-label="Section indicators">
+          <span className="chip chip--filled-primary" aria-current="page">Timesheet</span>
+          <span className="chip chip--tint-warn">Updated Just</span>
+        </div>
+        <div className="cluster">
+          <label style={{fontSize:13,color:'var(--text-secondary)'}}>Time Type:</label>
+          <select
+            className="select"
+            aria-label="Time Type"
+            value={timeType}
+            onChange={(e) => setTimeType(e.target.value)}
+          >
+            {timeTypeOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <button className="btn btn--primary" type="button">Check In</button>
+          <div style={{width:12}} />
+          <span style={{fontSize:13,color:'var(--text-secondary)'}}>{user?.email}</span>
+          <button className="btn btn--outline" style={{height:32}} onClick={handleLogout} type="button" aria-label="Log out">
             Logout
           </button>
         </div>
-      </header>
-      <main style={styles.main}>
-        <section style={styles.card}>
-          <h2 style={styles.title}>Welcome</h2>
-          <p style={styles.muted}>
-            This is your dashboard placeholder. Use the navigation to access timesheets and more.
-          </p>
+      </div>
+
+      {/* Page container */}
+      <div className="page">
+        {/* Summary card */}
+        <section className="card" aria-label="Timesheet Logger Summary">
+          <div className="card--header-dark">
+            <div>
+              <div style={{fontSize:14,fontWeight:700,letterSpacing:'0.2px'}}>Timesheet Logger</div>
+              <div style={{fontSize:12,color:'var(--on-dark-muted)'}}>Track your hours easily.</div>
+            </div>
+            <button className="btn btn--ghost-onDark btn--sm" type="button" aria-label="New Entry">New Entry</button>
+          </div>
+          <div className="card--body">
+            <div className="grid grid--cols-5" role="list">
+              {stats.map((s, idx) => (
+                <div key={idx} className="stat-pill" role="listitem" aria-label={s.label}>
+                  <span aria-hidden="true" style={{fontSize:16,color:'var(--primary)'}}>{s.icon}</span>
+                  <div>
+                    <div className="stat-pill__label">{s.label}</div>
+                    <div className="stat-pill__value">{s.value}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
-      </main>
+
+        {/* Main split: calendar + new entry panel */}
+        <div className="main-split">
+          {/* Calendar module */}
+          <section className="calendar" aria-label="Timesheet Calendar">
+            <div className="calendar__header">
+              <div className="tabs" role="tablist" aria-label="Calendar View">
+                <button className="tab tab--active" role="tab" aria-selected="true" type="button">Week View</button>
+                <button className="tab" role="tab" aria-selected="false" type="button">Month View</button>
+              </div>
+              <button className="btn btn--ghost-onDark btn--sm" type="button">Today</button>
+            </div>
+            <div className="calendar__grid">
+              <div className="calendar__weekdays" role="row">
+                {weekdays.map((w) => (
+                  <div key={w} className="calendar__weekday" role="columnheader">{w}</div>
+                ))}
+              </div>
+              <div className="calendar__cells" role="row">
+                {weekdays.map((w, i) => (
+                  <div
+                    key={w}
+                    className={`calendar__cell ${i === todayIdx ? 'calendar__cell--current' : ''}`}
+                    role="gridcell"
+                    aria-label={`${w} total hours`}
+                  >
+                    <div className="calendar__cell-inner">
+                      <div className="calendar__cell-label">
+                        <div className="calendar__cell-hours">0h</div>
+                        <div className="calendar__cell-sub">Work Log</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{height:12}} />
+            </div>
+          </section>
+
+          {/* Right panel - New Entry */}
+          <aside className="card" aria-label="New Entry Panel">
+            <div className="card--header-dark">
+              <div style={{fontSize:13,fontWeight:700}}>New Entry</div>
+              <div className="tabs" role="tablist" aria-label="Entry Type">
+                <button className="tab tab--active" role="tab" aria-selected="true" type="button">Work Entry</button>
+                <button className="tab" role="tab" aria-selected="false" type="button">Leave Request</button>
+              </div>
+            </div>
+            <div className="card--body" style={{background:'var(--surface)'}}>
+              <form className="grid" style={{gap:12}}>
+                <label className="label" htmlFor="project">Project</label>
+                <select id="project" className="select" defaultValue="">
+                  <option value="" disabled>Select project</option>
+                  <option>Chronose</option>
+                </select>
+
+                <label className="label" htmlFor="task">Task</label>
+                <select id="task" className="select" defaultValue="">
+                  <option value="" disabled>Select task</option>
+                  <option>Planning</option>
+                  <option>Testing</option>
+                  <option>Meetings</option>
+                </select>
+
+                <label className="label" htmlFor="notes">Notes</label>
+                <textarea id="notes" className="textarea" placeholder="Optional notes..." />
+
+                <span className="helper">Estimated 40h/week. Calculated automatically.</span>
+
+                <div className="new-entry__footer">
+                  <div style={{display:'flex', gap:8}}>
+                    <button className="btn btn--outline" type="button" style={{height:36}}>Save as Draft</button>
+                    <button className="btn btn--outline" type="button" style={{height:36, color:'var(--text-secondary)'}}>Clear</button>
+                  </div>
+                  <button className="btn btn--primary" type="button">Submit</button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }
-
-const styles = {
-  layout: {
-    minHeight: '100vh',
-    background: '#F9FAFB',
-    color: '#111827',
-  },
-  topbar: {
-    height: 56,
-    borderBottom: '1px solid #E5E7EB',
-    background: '#FFFFFF',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 16px',
-  },
-  brand: {
-    fontWeight: 700,
-    color: '#374151',
-  },
-  userArea: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#374151',
-  },
-  logoutBtn: {
-    height: 32,
-    padding: '0 12px',
-    borderRadius: 8,
-    border: '1px solid #EF4444',
-    background: '#EF4444',
-    color: '#FFFFFF',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  main: {
-    padding: 16,
-  },
-  card: {
-    background: '#FFFFFF',
-    border: '1px solid #E5E7EB',
-    borderRadius: 12,
-    padding: 16,
-    maxWidth: 720,
-  },
-  title: {
-    marginTop: 0,
-    marginBottom: 6,
-  },
-  muted: {
-    color: '#6B7280',
-  },
-};
