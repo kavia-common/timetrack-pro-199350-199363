@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
  * - Adds a live timer widget with Check In/Check Out and shows last session duration.
  * - Adds a Role dropdown set to "Employee" (disabled for now).
  * - Keeps everything frontend-only; no backend wiring.
+ * - New Entry form: adds prominent read-only date label synced with a date picker, and a required Hours worked numeric input.
  */
 
 // PUBLIC_INTERFACE
@@ -26,6 +27,15 @@ export default function Dashboard() {
 
   // Role dropdown (disabled for now; default Employee)
   const [role] = useState('employee');
+
+  // New Entry local state
+  const todayISO = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
+  const [entryDate, setEntryDate] = useState(todayISO);
+  const [hours, setHours] = useState(''); // string for input control
+  const [errors, setErrors] = useState({ hours: '', date: '' });
+  const [notes, setNotes] = useState('');
+  const [project, setProject] = useState('');
+  const [task, setTask] = useState('');
 
   // Timer effect
   useEffect(() => {
@@ -88,6 +98,73 @@ export default function Dashboard() {
     }
   };
 
+  // Helpers
+  const formatDateReadable = (iso) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return iso;
+    }
+  };
+
+  // Validate hours input
+  const validateHours = (val) => {
+    if (val === '' || val === null || val === undefined) return 'Please enter hours worked.';
+    const num = Number(val);
+    if (Number.isNaN(num)) return 'Hours must be a number.';
+    if (num < 0) return 'Hours cannot be negative.';
+    if (num > 24) return 'Hours cannot exceed 24.';
+    // Allow 0.25 increments commonly, but we just allow decimals generally
+    return '';
+  };
+
+  const onHoursChange = (e) => {
+    const val = e.target.value;
+    // allow empty value to let user type
+    setHours(val);
+    setErrors((prev) => ({ ...prev, hours: '' }));
+  };
+
+  const onDateChange = (e) => {
+    setEntryDate(e.target.value || todayISO);
+    setErrors((prev) => ({ ...prev, date: '' }));
+  };
+
+  const onClear = () => {
+    setProject('');
+    setTask('');
+    setNotes('');
+    setHours('');
+    setEntryDate(todayISO);
+    setErrors({ hours: '', date: '' });
+  };
+
+  const onSaveDraft = () => {
+    // Capture state; in MVP we just log it
+    // eslint-disable-next-line no-console
+    console.log('Draft saved (local only):', { project, task, notes, hours: Number(hours), date: entryDate });
+  };
+
+  const onSubmit = (e) => {
+    e.preventDefault();
+    const hourErr = validateHours(hours);
+    const dateErr = entryDate ? '' : 'Please select a date.';
+    const nextErrors = { hours: hourErr, date: dateErr };
+    setErrors(nextErrors);
+    if (hourErr || dateErr) return;
+
+    const payload = {
+      project,
+      task,
+      notes,
+      hours: Number(hours),
+      date: entryDate,
+    };
+    // eslint-disable-next-line no-console
+    console.log('Submitting entry (frontend only):', payload);
+  };
+
   // Status tab placeholder content
   const StatusView = (
     <div className="page">
@@ -128,7 +205,7 @@ export default function Dashboard() {
           >
             Status
           </button>
-          <span className="chip chip--tint-warn">Updated Just</span>
+            <span className="chip chip--tint-warn">Updated Just</span>
         </div>
 
         <div className="cluster" style={{ flexWrap: 'wrap' }}>
@@ -269,32 +346,111 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="card--body" style={{ background: 'var(--surface)' }}>
-                <form className="grid" style={{ gap: 12 }}>
+                <form className="grid" style={{ gap: 12 }} onSubmit={onSubmit} noValidate>
+                  {/* Prominent entry date display + selector */}
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div className="label" id="entry-date-label">Entry Date</div>
+                    <div
+                      role="text"
+                      aria-labelledby="entry-date-label"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'var(--surface-soft)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '8px 12px',
+                        boxShadow: 'var(--shadow-sm)',
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                        {formatDateReadable(entryDate)}
+                      </span>
+                      {/* Keep in sync: date input controls the label */}
+                      <input
+                        aria-label="Select date for this entry"
+                        type="date"
+                        className="input"
+                        value={entryDate}
+                        onChange={onDateChange}
+                        style={{ width: 150, height: 30 }}
+                        required
+                      />
+                    </div>
+                    {errors.date ? (
+                      <div className="helper" role="alert" style={{ color: 'var(--error)' }}>{errors.date}</div>
+                    ) : (
+                      <div className="helper">Choose the day this entry applies to. Defaults to today.</div>
+                    )}
+                  </div>
+
                   <label className="label" htmlFor="project">Project</label>
-                  <select id="project" className="select" defaultValue="">
+                  <select id="project" className="select" value={project} onChange={(e) => setProject(e.target.value)}>
                     <option value="" disabled>Select project</option>
-                    <option>Chronose</option>
+                    <option value="chronose">Chronose</option>
                   </select>
 
                   <label className="label" htmlFor="task">Task</label>
-                  <select id="task" className="select" defaultValue="">
+                  <select id="task" className="select" value={task} onChange={(e) => setTask(e.target.value)}>
                     <option value="" disabled>Select task</option>
-                    <option>Planning</option>
-                    <option>Testing</option>
-                    <option>Meetings</option>
+                    <option value="planning">Planning</option>
+                    <option value="testing">Testing</option>
+                    <option value="meetings">Meetings</option>
                   </select>
 
+                  {/* Hours worked numeric input */}
+                  <label className="label" htmlFor="hours">Hours Worked</label>
+                  <input
+                    id="hours"
+                    className="input"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="e.g., 7.5"
+                    min="0"
+                    max="24"
+                    step="0.25"
+                    value={hours}
+                    onChange={onHoursChange}
+                    required
+                    aria-describedby="hours-help"
+                  />
+                  {errors.hours ? (
+                    <div id="hours-help" className="helper" role="alert" style={{ color: 'var(--error)' }}>
+                      {errors.hours}
+                    </div>
+                  ) : (
+                    <div id="hours-help" className="helper">
+                      Enter hours as a decimal. Example: 7.5 for 7 hours 30 minutes. Min 0, Max 24.
+                    </div>
+                  )}
+
                   <label className="label" htmlFor="notes">Notes</label>
-                  <textarea id="notes" className="textarea" placeholder="Optional notes..." />
+                  <textarea
+                    id="notes"
+                    className="textarea"
+                    placeholder="Optional notes..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
 
                   <span className="helper">Estimated 40h/week. Calculated automatically.</span>
 
                   <div className="new-entry__footer">
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn--outline" type="button" style={{ height: 36 }}>Save as Draft</button>
-                      <button className="btn btn--outline" type="button" style={{ height: 36, color: 'var(--text-secondary)' }}>Clear</button>
+                      <button className="btn btn--outline" type="button" style={{ height: 36 }} onClick={onSaveDraft}>
+                        Save as Draft
+                      </button>
+                      <button
+                        className="btn btn--outline"
+                        type="button"
+                        style={{ height: 36, color: 'var(--text-secondary)' }}
+                        onClick={onClear}
+                      >
+                        Clear
+                      </button>
                     </div>
-                    <button className="btn btn--primary" type="button">Submit</button>
+                    <button className="btn btn--primary" type="submit">Submit</button>
                   </div>
                 </form>
               </div>
