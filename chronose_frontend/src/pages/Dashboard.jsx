@@ -1,10 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import {
+  listMyTimeEntries,
+  createTimeEntry,
+  updateTimeEntry,
+  deleteTimeEntry,
+  getFeatureFlags,
+  validateEntryFields,
+} from '../services/timeEntries';
 
 /**
  * Employee Dashboard (Timesheet + Status)
- * This version wires Edit actions to open the New Entry panel for the selected date
- * and implements a per-day persistent Check In/Out timer with 12h auto-checkout.
+ * Now wired to Supabase-backed CRUD for "time_entries" via the service layer.
+ * - Lists current user's entries in Status -> Work list
+ * - Allows add/edit/delete from New Entry form and Status list
+ * - Optimistic UI with fallback refetch post-mutation
+ * - Graceful missing schema handling with user-facing message
  */
 
 // PUBLIC_INTERFACE
@@ -61,12 +72,35 @@ export default function Dashboard() {
 
   // Status sub-tabs state and mock data
   const [statusSubTab, setStatusSubTab] = useState('work'); // 'work' | 'leave'
-  const [dailyLogs, setDailyLogs] = useState([
-    { id: 'w1', date: todayISO, hours: 7.5, task: 'Planning', status: 'draft' },
-    { id: 'w2', date: toISO(new Date(Date.now() - 86400000)), hours: 8, task: 'Testing', status: 'pending' },
-    { id: 'w3', date: toISO(new Date(Date.now() - 2 * 86400000)), hours: 6, task: 'Meetings', status: 'approved' },
-    { id: 'w4', date: toISO(new Date(Date.now() - 3 * 86400000)), hours: 4, task: 'Planning', status: 'rejected' },
-  ]);
+
+  // Remote data: time entries for current user
+  const [dailyLogs, setDailyLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState('');
+
+  const { enableRealData } = getFeatureFlags();
+
+  // Fetch current user's entries
+  useEffect(() => {
+    let mounted = true;
+    const run = async () => {
+      if (!user) return;
+      setLogsLoading(true);
+      setLogsError('');
+      const { data, error } = await listMyTimeEntries(user.id);
+      if (!mounted) return;
+      if (error && data?.length === 0) {
+        // Show friendly message for missing schema / disabled feature
+        setLogsError(error?.code === 'missing_schema' || error?.code === 'feature_disabled'
+          ? 'Data not available yet'
+          : (error?.message || 'Failed to load entries'));
+      }
+      setDailyLogs(data || []);
+      setLogsLoading(false);
+    };
+    run();
+    return () => { mounted = false; };
+  }, [user]);
   const [leaveRequests, setLeaveRequests] = useState([
     { id: 'l1', date: todayISO, type: 'Sick', duration: 'full', hours: 8, status: 'draft' },
     { id: 'l2', date: toISO(new Date(Date.now() - 6 * 86400000)), type: 'Casual', duration: 'partial', hours: 4, status: 'pending' },
@@ -357,12 +391,14 @@ export default function Dashboard() {
   const onClear = () => {
     clearFormOnly();
     setEntryDate(selectedDateISO);
+    setEditingId(null);
   };
 
   // PUBLIC_INTERFACE
   const onClosePanel = () => {
     /** Close/hide the New Entry panel and clear any unsaved inputs. */
     clearFormOnly();
+    setEditingId(null);
     setShowEntryPanel(false);
   };
 
@@ -384,17 +420,75 @@ export default function Dashboard() {
     }
   };
 
-  const onSubmitWork = (e) => {
-    e.preventDefault();
-    const hourErr = validateHours(hours);
-    const dateErr = selectedDateISO ? '' : 'Please select a date.';
-    const nextErrors = { hours: hourErr, date: dateErr };
-    setWorkErrors(nextErrors);
-    if (hourErr || dateErr) return;
+  // Editing support
+  const [editingId, setEditingId] = useState(null);
 
-    const payload = { project, task, notes, hours: Number(hours), date: selectedDateISO };
-    // eslint-disable-next-line no-console
-    console.log('Submitting work entry (frontend only):', payload);
+  const onSubmitWork = async (e) => {
+    e.preventDefault();
+    const { errors, valid } = validateEntryFields({
+      date: selectedDateISO,
+      hours,
+      notes,
+      project,
+      task,
+    });
+    setWorkErrors((prev) => ({ ...prev, ...errors }));
+    if (!valid) return;
+
+    if (!user) {
+      // eslint-disable-next-line no-console
+      console.error('Not authenticated');
+      return;
+    }
+
+    const base = {
+      user_id: user.id,
+      date: selectedDateISO,
+      project,
+      task,
+      hours: Number(hours),
+      notes,
+      status: 'draft',
+    };
+
+    // Optimistic update
+    if (!editingId) {
+      const tempId = `tmp_${Date.now()}`;
+      const optimistic = { ...base, id: tempId };
+      setDailyLogs((prev) => [optimistic, ...prev]);
+      const { data, error } = await createTimeEntry(base);
+      if (error) {
+        // rollback optimistic
+        setDailyLogs((prev) => prev.filter((it) => it.id !== tempId));
+        setWorkErrors((prev) => ({ ...prev, submit: error.message || 'Failed to create entry' }));
+        // Refetch to be safe
+        const res = await listMyTimeEntries(user.id);
+        setDailyLogs(res.data || []);
+      } else {
+        // replace temp with actual
+        setDailyLogs((prev) => [data, ...prev.filter((it) => it.id !== tempId)]);
+        clearFormOnly();
+        setEntryDate(selectedDateISO);
+      }
+    } else {
+      // Optimistic update for edit
+      const old = dailyLogs.find((x) => x.id === editingId);
+      const patched = { ...old, ...base, id: editingId };
+      setDailyLogs((prev) => prev.map((x) => (x.id === editingId ? patched : x)));
+      const { data, error } = await updateTimeEntry(editingId, base);
+      if (error) {
+        // rollback to old
+        setDailyLogs((prev) => prev.map((x) => (x.id === editingId ? old : x)));
+        setWorkErrors((prev) => ({ ...prev, submit: error.message || 'Failed to update entry' }));
+        const res = await listMyTimeEntries(user.id);
+        setDailyLogs(res.data || []);
+      } else {
+        setDailyLogs((prev) => prev.map((x) => (x.id === editingId ? data : x)));
+        setEditingId(null);
+        clearFormOnly();
+        setEntryDate(selectedDateISO);
+      }
+    }
   };
 
   // PUBLIC_INTERFACE
@@ -448,12 +542,29 @@ export default function Dashboard() {
     const it = dailyLogs.find((x) => x.id === id);
     if (!it) return;
     setSelectedDateISO(it.date);
+    setProject(it.project || '');
+    setTask(it.task || '');
+    setNotes(it.notes || '');
+    setHours(it.hours != null ? String(it.hours) : '');
+    setEditingId(id);
     setEntryMode('work');
     setShowEntryPanel(true);
     setActiveTab('timesheet');
   };
-  const handleDeleteWork = (id) => {
+
+  const handleDeleteWork = async (id) => {
+    const backup = dailyLogs;
+    // optimistic removal
     setDailyLogs((prev) => prev.filter((it) => it.id !== id));
+    const { error } = await deleteTimeEntry(id);
+    if (error) {
+      // rollback
+      setDailyLogs(backup);
+    } else if (user) {
+      // refetch to be safe
+      const res = await listMyTimeEntries(user.id);
+      setDailyLogs(res.data || []);
+    }
   };
   const handleEditLeave = (id) => {
     const it = leaveRequests.find((x) => x.id === id);
@@ -504,7 +615,34 @@ export default function Dashboard() {
         <div className="card--body" style={{ background: 'var(--surface-soft)' }}>
           {statusSubTab === 'work' ? (
             <div aria-label="Work Status List" style={{ display: 'grid', gap: 8 }}>
-              {dailyLogs.length === 0 ? (
+              {logsLoading && (
+                <div
+                  style={{
+                    padding: 12,
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  Loading entries…
+                </div>
+              )}
+              {!logsLoading && logsError && (
+                <div
+                  role="alert"
+                  style={{
+                    padding: 12,
+                    background: 'var(--warn-tint)',
+                    border: '1px solid var(--warn)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--text-strong)',
+                  }}
+                >
+                  {logsError}
+                </div>
+              )}
+              {!logsLoading && !logsError && dailyLogs.length === 0 && (
                 <div
                   style={{
                     padding: 12,
@@ -516,7 +654,8 @@ export default function Dashboard() {
                 >
                   No work logs yet.
                 </div>
-              ) : (
+              )}
+              {!logsLoading && !logsError && dailyLogs.length > 0 && (
                 <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflow: 'auto' }}>
                   {dailyLogs.map((item) => (
                     <div
@@ -537,7 +676,7 @@ export default function Dashboard() {
                         <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
                           {formatDateReadable(item.date)} • {item.hours}h
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{item.task}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{item.task || '—'}</div>
                       </div>
                       <StatusBadge status={item.status} />
                       {canEditOrDelete(item.status) ? (
@@ -1057,7 +1196,7 @@ export default function Dashboard() {
                       <span className="helper">Estimated 40h/week. Calculated automatically.</span>
 
                       <div className="new-entry__footer">
-                        <div style={{ display: 'flex', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <button className="btn btn--outline" type="button" style={{ height: 36 }} onClick={onSaveDraft}>
                             Save as Draft
                           </button>
@@ -1069,8 +1208,13 @@ export default function Dashboard() {
                           >
                             Clear
                           </button>
+                          {workErrors.submit && (
+                            <span role="alert" className="helper" style={{ color: 'var(--error)' }}>
+                              {workErrors.submit}
+                            </span>
+                          )}
                         </div>
-                        <button className="btn btn--primary" type="submit">Submit</button>
+                        <button className="btn btn--primary" type="submit">{editingId ? 'Update' : 'Submit'}</button>
                       </div>
                     </form>
                   ) : (
