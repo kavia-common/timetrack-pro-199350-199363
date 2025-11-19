@@ -29,21 +29,25 @@ export default defineConfig(({ mode }) => {
       open: false,
       strictPort: true,
       watch: {
-        // Ignore file patterns that should NOT trigger restarts
+        // Ignore all types of .env, sample, local, and example files for server restart triggers
         ignored: [
           '**/.env',
           '**/.env.*',
+          '**/.env.local',
+          '**/.env.*.local',
+          '**/.env.sample',
+          '**/.env*.sample',
           '**/.env.example',
           '**/.env*.example',
           '**/.env.*.example',
-          '**/.env.sample',
-          '**/.env*.sample',
-          '**/.env.temp',
-          '**/.env.local',
-          '**/.env.*.local',
           '**/.env*.bak',
           '**/.env*.backup',
           '**/.env*.previous',
+          '**/.env.*.backup',
+          '**/.env.*.previous',
+          '**/.env.*.bak',
+          '**/.env.local.*',
+          '**/.env.*.local.*',
           '**/node_modules/**',
         ]
       }
