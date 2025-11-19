@@ -21,6 +21,9 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       open: false,
       strictPort: true,
+      allowedHosts: [
+        'vscode-internal-40619-beta.beta01.cloud.kavia.ai'
+      ],
       watch: {
         usePolling: false,
         ignored: [
