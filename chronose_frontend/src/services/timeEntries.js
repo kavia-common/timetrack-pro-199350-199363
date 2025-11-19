@@ -72,6 +72,10 @@ function mapRow(r) {
     hours: typeof r.hours === 'number' ? r.hours : Number(r.hours || 0),
     notes: r.notes || '',
     status: r.status || 'draft',
+    type: r.type || 'work', // added for work/leave filtering
+    leave_type: r.leave_type,     // optional, for leave records
+    leave_duration: r.leave_duration,
+    leave_reason: r.leave_reason,
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
@@ -89,21 +93,22 @@ function isMissingTable(error) {
   );
 }
 
-// PUBLIC_INTERFACE
-export async function listMyTimeEntries(userId) {
-  /** List time entries for the given user, ordered by date desc. */
+/**
+ * PUBLIC_INTERFACE
+ * List time entries by user and (optionally) by type.
+ */
+export async function listTimeEntriesWithType(userId, type = null) {
   const { enableRealData } = getFeatureFlags();
   if (!enableRealData || !supabase) {
-    // Fallback to empty list without crashing
     return { data: [], error: err('Data not available yet', 'feature_disabled') };
   }
   try {
-    const { data, error } = await supabase
-      .from('time_entries')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-
+    let q = supabase.from('time_entries').select('*').eq('user_id', userId);
+    if (type) {
+      q = q.eq('type', type);
+    }
+    q = q.order('date', { ascending: false });
+    const { data, error } = await q;
     if (error) {
       if (isMissingTable(error)) {
         return { data: [], error: err('Data not available yet', 'missing_schema') };
@@ -116,34 +121,86 @@ export async function listMyTimeEntries(userId) {
   }
 }
 
-// PUBLIC_INTERFACE
-export async function createTimeEntry(entry) {
-  /** Create a new time entry for the current user. */
+/**
+ * Legacy: fetch all for user (no type filter).
+ */
+export async function listMyTimeEntries(userId) {
+  return listTimeEntriesWithType(userId, null);
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Create or save a draft work or leave entry.
+ * Pass mode: 'work' or 'leave', status: 'submitted' or 'draft'.
+ * For leave: provide leave_type, leave_duration, leave_hours, leave_reason.
+ */
+export async function createOrSaveDraftEntry({ entry, mode = "work", status = "draft" }) {
   const { enableRealData } = getFeatureFlags();
   if (!enableRealData || !supabase) {
-    return { data: null, error: err('Data not available yet', 'feature_disabled') };
+    return { data: null, error: err("Data not available yet", "feature_disabled") };
   }
   try {
-    const payload = {
-      user_id: entry.user_id,
-      date: entry.date,
-      project: entry.project || null,
-      task: entry.task || null,
-      hours: Number(entry.hours),
-      notes: entry.notes || null,
-      status: entry.status || 'draft',
-    };
+    let payload;
+    if (mode === "work") {
+      payload = {
+        user_id: entry.user_id,
+        date: entry.date,
+        project: entry.project || null,
+        task: entry.task || null,
+        hours: Number(entry.hours),
+        notes: entry.notes || null,
+        status,
+        type: "work",
+      };
+    } else if (mode === "leave") {
+      payload = {
+        user_id: entry.user_id,
+        date: entry.date,
+        hours: Number(entry.leave_hours),
+        status,
+        type: "leave",
+        leave_type: entry.leave_type,
+        leave_duration: entry.leave_duration,
+        leave_reason: entry.leave_reason || null,
+        // project and task left null
+      };
+    } else {
+      return { data: null, error: err("Invalid entry mode", "validation_error") };
+    }
     const { data, error } = await supabase.from('time_entries').insert(payload).select().single();
     if (error) {
       if (isMissingTable(error)) {
-        return { data: null, error: err('Data not available yet', 'missing_schema') };
+        return { data: null, error: err("Data not available yet", "missing_schema") };
       }
       return { data: null, error };
     }
     return { data: mapRow(data), error: null };
   } catch (e) {
-    return { data: null, error: err(e?.message || 'Failed to create time entry') };
+    return { data: null, error: err(e?.message || "Failed to create/save entry") };
   }
+}
+
+/**
+ * Still export createTimeEntry for existing usages (work only).
+ */
+export async function createTimeEntry(entry) {
+  return createOrSaveDraftEntry({ entry, mode: "work", status: entry.status || "draft" });
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Save a draft (work or leave) entry.
+ */
+export async function saveDraftEntry({ entry, mode }) {
+  return createOrSaveDraftEntry({ entry, mode, status: "draft" });
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * List leave entries for a user.
+ */
+export async function listMyLeaveEntries(userId) {
+  return listTimeEntriesWithType(userId, "leave");
 }
 
 // PUBLIC_INTERFACE
@@ -161,6 +218,10 @@ export async function updateTimeEntry(id, patch) {
       ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
       ...(patch.date !== undefined ? { date: patch.date } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.type !== undefined ? { type: patch.type } : {}),
+      ...(patch.leave_type !== undefined ? { leave_type: patch.leave_type } : {}),
+      ...(patch.leave_duration !== undefined ? { leave_duration: patch.leave_duration } : {}),
+      ...(patch.leave_reason !== undefined ? { leave_reason: patch.leave_reason } : {}),
     };
     const { data, error } = await supabase.from('time_entries').update(updates).eq('id', id).select().single();
     if (error) {

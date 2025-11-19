@@ -7,6 +7,10 @@ import {
   deleteTimeEntry,
   getFeatureFlags,
   validateEntryFields,
+  saveDraftEntry,
+  createOrSaveDraftEntry,
+  listTimeEntriesWithType,
+  listMyLeaveEntries,
 } from '../services/timeEntries';
 
 /**
@@ -74,38 +78,41 @@ export default function Dashboard() {
   const [statusSubTab, setStatusSubTab] = useState('work'); // 'work' | 'leave'
 
   // Remote data: time entries for current user
-  const [dailyLogs, setDailyLogs] = useState([]);
+  const [workEntries, setWorkEntries] = useState([]);
+  const [leaveEntries, setLeaveEntries] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState('');
 
   const { enableRealData } = getFeatureFlags();
 
-  // Fetch current user's entries
+  // Fetch work/leave entries as live lists
   useEffect(() => {
     let mounted = true;
-    const run = async () => {
+    async function fetchAll() {
       if (!user) return;
       setLogsLoading(true);
       setLogsError('');
-      const { data, error } = await listMyTimeEntries(user.id);
+      // Fetch work (type === 'work')
+      const { data: work, error: workError } = await listTimeEntriesWithType(user.id, "work");
+      // Fetch leave (type === 'leave')
+      const { data: leave, error: leaveError } = await listTimeEntriesWithType(user.id, "leave");
+
       if (!mounted) return;
-      if (error && data?.length === 0) {
-        // Show friendly message for missing schema / disabled feature
-        setLogsError(error?.code === 'missing_schema' || error?.code === 'feature_disabled'
-          ? 'Data not available yet'
-          : (error?.message || 'Failed to load entries'));
+      if ((workError && (!work || work.length === 0)) || (leaveError && (!leave || leave.length === 0))) {
+        setLogsError(
+          (workError?.code === 'missing_schema' || workError?.code === 'feature_disabled' ||
+            leaveError?.code === 'missing_schema' || leaveError?.code === 'feature_disabled')
+            ? 'Data not available yet'
+            : (workError?.message || leaveError?.message || 'Failed to load entries')
+        );
       }
-      setDailyLogs(data || []);
+      setWorkEntries(work || []);
+      setLeaveEntries(leave || []);
       setLogsLoading(false);
-    };
-    run();
+    }
+    fetchAll();
     return () => { mounted = false; };
   }, [user]);
-  const [leaveRequests, setLeaveRequests] = useState([
-    { id: 'l1', date: todayISO, type: 'Sick', duration: 'full', hours: 8, status: 'draft' },
-    { id: 'l2', date: toISO(new Date(Date.now() - 6 * 86400000)), type: 'Casual', duration: 'partial', hours: 4, status: 'pending' },
-    { id: 'l3', date: toISO(new Date(Date.now() - 10 * 86400000)), type: 'Vacation', duration: 'full', hours: 8, status: 'approved' },
-  ]);
 
   // Keep entryDate synced with selectedDateISO
   useEffect(() => {
@@ -402,27 +409,58 @@ export default function Dashboard() {
     setShowEntryPanel(false);
   };
 
-  const onSaveDraft = () => {
+  // Save draft for either work or leave; saves to Supabase for custom types
+  const onSaveDraft = async () => {
+    if (!user) {
+      // eslint-disable-next-line no-console
+      console.error('Not authenticated');
+      return;
+    }
     if (entryMode === 'work') {
-      // eslint-disable-next-line no-console
-      console.log('Draft saved (work, local only):', {
-        project, task, notes, hours: hours === '' ? null : Number(hours), date: selectedDateISO,
-      });
-    } else {
-      // eslint-disable-next-line no-console
-      console.log('Draft saved (leave, local only):', {
+      const entry = {
+        user_id: user.id,
         date: selectedDateISO,
-        leaveType,
-        leaveDuration,
-        leaveHours: leaveDuration === 'partial' ? Number(leaveHours || 0) : LEAVE_MAX_HOURS,
-        leaveReason,
-      });
+        project,
+        task,
+        hours: hours === '' ? null : Number(hours),
+        notes,
+      };
+      const res = await saveDraftEntry({ entry, mode: 'work' });
+      if (!res.error) {
+        // refetch work entries
+        const { data: w } = await listTimeEntriesWithType(user.id, "work");
+        setWorkEntries(w || []);
+        clearFormOnly();
+      } else {
+        setWorkErrors((prev) => ({ ...prev, submit: res.error.message || "Draft save failed" }));
+        // Fallback: log error, no crash
+      }
+    } else {
+      // leave draft
+      const entry = {
+        user_id: user.id,
+        date: selectedDateISO,
+        leave_type: leaveType,
+        leave_duration: leaveDuration,
+        leave_hours: leaveDuration === 'partial' ? Number(leaveHours || 0) : LEAVE_MAX_HOURS,
+        leave_reason: leaveReason,
+      };
+      const res = await saveDraftEntry({ entry, mode: 'leave' });
+      if (!res.error) {
+        // refetch leave
+        const { data: l } = await listTimeEntriesWithType(user.id, "leave");
+        setLeaveEntries(l || []);
+        clearFormOnly();
+      } else {
+        setLeaveErrors((prev) => ({ ...prev, submit: res.error.message || "Draft save failed" }));
+      }
     }
   };
 
   // Editing support
   const [editingId, setEditingId] = useState(null);
 
+  // Submit work entry (create or edit)
   const onSubmitWork = async (e) => {
     e.preventDefault();
     const { errors, valid } = validateEntryFields({
@@ -434,13 +472,11 @@ export default function Dashboard() {
     });
     setWorkErrors((prev) => ({ ...prev, ...errors }));
     if (!valid) return;
-
     if (!user) {
       // eslint-disable-next-line no-console
       console.error('Not authenticated');
       return;
     }
-
     const base = {
       user_id: user.id,
       date: selectedDateISO,
@@ -448,42 +484,32 @@ export default function Dashboard() {
       task,
       hours: Number(hours),
       notes,
-      status: 'draft',
+      status: 'submitted',
     };
-
-    // Optimistic update
     if (!editingId) {
-      const tempId = `tmp_${Date.now()}`;
-      const optimistic = { ...base, id: tempId };
-      setDailyLogs((prev) => [optimistic, ...prev]);
-      const { data, error } = await createTimeEntry(base);
-      if (error) {
-        // rollback optimistic
-        setDailyLogs((prev) => prev.filter((it) => it.id !== tempId));
-        setWorkErrors((prev) => ({ ...prev, submit: error.message || 'Failed to create entry' }));
-        // Refetch to be safe
-        const res = await listMyTimeEntries(user.id);
-        setDailyLogs(res.data || []);
-      } else {
-        // replace temp with actual
-        setDailyLogs((prev) => [data, ...prev.filter((it) => it.id !== tempId)]);
+      // Create new work entry, submit status
+      const res = await createOrSaveDraftEntry({ entry: base, mode: "work", status: "submitted" });
+      if (!res.error) {
+        const { data: w } = await listTimeEntriesWithType(user.id, "work");
+        setWorkEntries(w || []);
         clearFormOnly();
         setEntryDate(selectedDateISO);
+      } else {
+        setWorkErrors((prev) => ({ ...prev, submit: res.error.message || "Failed to create entry" }));
       }
     } else {
-      // Optimistic update for edit
-      const old = dailyLogs.find((x) => x.id === editingId);
-      const patched = { ...old, ...base, id: editingId };
-      setDailyLogs((prev) => prev.map((x) => (x.id === editingId ? patched : x)));
-      const { data, error } = await updateTimeEntry(editingId, base);
+      // Edit existing
+      const old = workEntries.find((x) => x.id === editingId) || {};
+      const { data, error } = await updateTimeEntry(editingId, { ...base, status: "submitted", type: "work" });
       if (error) {
-        // rollback to old
-        setDailyLogs((prev) => prev.map((x) => (x.id === editingId ? old : x)));
-        setWorkErrors((prev) => ({ ...prev, submit: error.message || 'Failed to update entry' }));
-        const res = await listMyTimeEntries(user.id);
-        setDailyLogs(res.data || []);
+        setWorkErrors((prev) => ({ ...prev, submit: error.message || "Failed to update entry" }));
+        // Fallback reload entries
+        const { data: w } = await listTimeEntriesWithType(user.id, "work");
+        setWorkEntries(w || []);
       } else {
-        setDailyLogs((prev) => prev.map((x) => (x.id === editingId ? data : x)));
+        setWorkEntries((prev) =>
+          prev.map((x) => (x.id === editingId ? { ...old, ...data } : x))
+        );
         setEditingId(null);
         clearFormOnly();
         setEntryDate(selectedDateISO);
@@ -516,22 +542,35 @@ export default function Dashboard() {
     return errs;
   };
 
-  const onSubmitLeave = (e) => {
+  // Submit leave entry (immediate DB)
+  const onSubmitLeave = async (e) => {
     e.preventDefault();
     const errs = validateLeave();
     setLeaveErrors(errs);
     const hasErr = Object.values(errs).some(Boolean);
     if (hasErr) return;
-
-    const payload = {
+    if (!user) {
+      // eslint-disable-next-line no-console
+      console.error('Not authenticated');
+      return;
+    }
+    const entry = {
+      user_id: user.id,
       date: selectedDateISO,
-      leaveType,
-      leaveDuration,
-      leaveHours: leaveDuration === 'partial' ? Number(leaveHours || 0) : LEAVE_MAX_HOURS,
-      leaveReason: leaveReason.trim(),
+      leave_type: leaveType,
+      leave_duration: leaveDuration,
+      leave_hours: leaveDuration === 'partial' ? Number(leaveHours || 0) : LEAVE_MAX_HOURS,
+      leave_reason: leaveReason.trim(),
     };
-    // eslint-disable-next-line no-console
-    console.log('Submitting leave request (frontend only):', payload);
+    const res = await createOrSaveDraftEntry({ entry, mode: "leave", status: "submitted" });
+    if (!res.error) {
+      // refetch leave immediately
+      const { data: l } = await listTimeEntriesWithType(user.id, "leave");
+      setLeaveEntries(l || []);
+      clearFormOnly();
+    } else {
+      setLeaveErrors((prev) => ({ ...prev, submit: res.error.message || "Failed to submit leave" }));
+    }
   };
 
   // Actions for Status lists
@@ -539,7 +578,7 @@ export default function Dashboard() {
 
   // Wire Edit actions to open panel and set date + tab
   const handleEditWork = (id) => {
-    const it = dailyLogs.find((x) => x.id === id);
+    const it = workEntries.find((x) => x.id === id);
     if (!it) return;
     setSelectedDateISO(it.date);
     setProject(it.project || '');
@@ -553,32 +592,46 @@ export default function Dashboard() {
   };
 
   const handleDeleteWork = async (id) => {
-    const backup = dailyLogs;
-    // optimistic removal
-    setDailyLogs((prev) => prev.filter((it) => it.id !== id));
+    const backup = workEntries;
+    setWorkEntries((prev) => prev.filter((it) => it.id !== id));
     const { error } = await deleteTimeEntry(id);
     if (error) {
-      // rollback
-      setDailyLogs(backup);
+      setWorkEntries(backup);
     } else if (user) {
-      // refetch to be safe
-      const res = await listMyTimeEntries(user.id);
-      setDailyLogs(res.data || []);
+      // Refetch work entries to sync
+      const { data: w } = await listTimeEntriesWithType(user.id, "work");
+      setWorkEntries(w || []);
     }
   };
+
   const handleEditLeave = (id) => {
-    const it = leaveRequests.find((x) => x.id === id);
+    const it = leaveEntries.find((x) => x.id === id);
     if (!it) return;
     setSelectedDateISO(it.date);
+    setLeaveType(it.leave_type || 'casual');
+    setLeaveDuration(it.leave_duration || 'full');
+    setLeaveHours(it.hours ? `${it.hours}` : '');
+    setLeaveReason(it.leave_reason || '');
+    setEditingId(id);
     setEntryMode('leave');
     setShowEntryPanel(true);
     setActiveTab('timesheet');
   };
-  const handleDeleteLeave = (id) => {
-    setLeaveRequests((prev) => prev.filter((it) => it.id !== id));
+
+  const handleDeleteLeave = async (id) => {
+    const backup = leaveEntries;
+    setLeaveEntries((prev) => prev.filter((it) => it.id !== id));
+    const { error } = await deleteTimeEntry(id);
+    if (error) {
+      setLeaveEntries(backup);
+    } else if (user) {
+      // Refetch leave entries to sync
+      const { data: l } = await listTimeEntriesWithType(user.id, "leave");
+      setLeaveEntries(l || []);
+    }
   };
 
-  // Status tab content with sub-tabs and mock lists
+  // Status tab content with sub-tabs and live lists
   const StatusView = (
     <div className="page">
       <section className="card" aria-label="Status Overview">
@@ -642,7 +695,7 @@ export default function Dashboard() {
                   {logsError}
                 </div>
               )}
-              {!logsLoading && !logsError && dailyLogs.length === 0 && (
+              {!logsLoading && !logsError && workEntries.length === 0 && (
                 <div
                   style={{
                     padding: 12,
@@ -655,9 +708,9 @@ export default function Dashboard() {
                   No work logs yet.
                 </div>
               )}
-              {!logsLoading && !logsError && dailyLogs.length > 0 && (
+              {!logsLoading && !logsError && workEntries.length > 0 && (
                 <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflow: 'auto' }}>
-                  {dailyLogs.map((item) => (
+                  {workEntries.map((item) => (
                     <div
                       key={item.id}
                       style={{
@@ -711,7 +764,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div aria-label="Leave Status List" style={{ display: 'grid', gap: 8 }}>
-              {leaveRequests.length === 0 ? (
+              {leaveEntries.length === 0 ? (
                 <div
                   style={{
                     padding: 12,
@@ -725,7 +778,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflow: 'auto' }}>
-                  {leaveRequests.map((item) => (
+                  {leaveEntries.map((item) => (
                     <div
                       key={item.id}
                       style={{
@@ -742,7 +795,10 @@ export default function Dashboard() {
                     >
                       <div>
                         <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
-                          {formatDateReadable(item.date)} • {item.type} • {item.duration === 'full' ? 'Full' : `${item.hours}h`}
+                          {formatDateReadable(item.date)} • {item.leave_type || 'Leave'} • {item.leave_duration === 'full' ? 'Full' : `${item.hours}h`}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          {(item.leave_reason || '').slice(0, 80)}
                         </div>
                       </div>
                       <StatusBadge status={item.status} />
