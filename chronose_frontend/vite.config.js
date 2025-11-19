@@ -6,7 +6,7 @@ import path from 'path';
  * PUBLIC_INTERFACE
  * Vite configuration for Chronose Frontend.
  * - Loads only REACT_APP_ variables for the client.
- * - Ignores .env.example, .env*.example, and temp env files (e.g., .env.local, .env.temp) to stabilize dev server reloads.
+ * - Ignores .env, .env.*, .env.example, .env*.example, vite.config.*, and other temp/env files to stabilize dev server reloads.
  * - Ensures .env files are loaded for environment variables but not watched for noisy changes.
  */
 export default defineConfig(({ mode }) => {
@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      'process.env': env
+      'process.env': env,
     },
     resolve: {
       alias: {
@@ -29,14 +29,14 @@ export default defineConfig(({ mode }) => {
       open: false,
       strictPort: true,
       watch: {
-        // Ignore all types of .env, sample, local, and example files for server restart triggers
+        usePolling: false,
         ignored: [
           '**/.env',
           '**/.env.*',
           '**/.env.local',
           '**/.env.*.local',
-          '**/.env.sample',
           '**/.env*.sample',
+          '**/.env*sample',
           '**/.env.example',
           '**/.env*.example',
           '**/.env.*.example',
@@ -48,9 +48,14 @@ export default defineConfig(({ mode }) => {
           '**/.env.*.bak',
           '**/.env.local.*',
           '**/.env.*.local.*',
+          '**/vite.config.*',
+          '**/vite.config.*.*',
           '**/node_modules/**',
         ]
-      }
+      },
+      fs: {
+        strict: false,
+      },
     },
     preview: {
       port: 3000,
