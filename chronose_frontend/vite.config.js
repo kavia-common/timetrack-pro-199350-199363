@@ -31,9 +31,13 @@ export default defineConfig(({ mode }) => {
       watch: {
         // Ignore file patterns that should NOT trigger restarts
         ignored: [
+          '**/.env',
+          '**/.env.*',
           '**/.env.example',
           '**/.env*.example',
           '**/.env.*.example',
+          '**/.env.sample',
+          '**/.env*.sample',
           '**/.env.temp',
           '**/.env.local',
           '**/.env.*.local',
