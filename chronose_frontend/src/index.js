@@ -5,6 +5,7 @@ import App from "./App";
 /**
  * React 18 root rendering logic, compatible for Create React App foundation
  */
+// PUBLIC_INTERFACE
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
