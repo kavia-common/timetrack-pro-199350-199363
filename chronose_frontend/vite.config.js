@@ -5,12 +5,18 @@ import path from 'path';
 /**
  * PUBLIC_INTERFACE
  * Vite configuration for Chronose Frontend.
- * - Loads only REACT_APP_ variables for the client.
- * - Ignores .env, .env.*, .env.example, .env*.example, vite.config.*, and other temp/env files to stabilize dev server reloads.
- * - Ensures .env files are loaded for environment variables but not watched for noisy changes.
+ *
+ * - Strictly STATIC: This config does NOT write or update any file (including itself or .env files).
+ * - Only loads REACT_APP_ environment variables for frontend use.
+ * - Ensures .env, .env.*, .env.example, vite.config.*, and related files are IGNORED for watch/hot-reload to prevent infinite restart loops.
+ * - No dynamic code, no formatting, no hooks: content is frozen and static.
+ * - See package.json for plain scripts/no postinstall/preinstall hooks.
+ *
+ * If server hot-reload loops persist, verify your editor/tools are *not* touching .env example files.
  */
+
 export default defineConfig(({ mode }) => {
-  // Only load environment variables prefixed with REACT_APP_
+  // Only loads REACT_APP_* variables
   const env = loadEnv(mode, process.cwd(), 'REACT_APP_');
 
   return {
@@ -28,6 +34,7 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       open: false,
       strictPort: true,
+      // .viteignore is NOT supported, so all patterns must be in 'ignored' below
       watch: {
         usePolling: false,
         ignored: [
@@ -51,7 +58,7 @@ export default defineConfig(({ mode }) => {
           '**/vite.config.*',
           '**/vite.config.*.*',
           '**/node_modules/**',
-        ]
+        ],
       },
       fs: {
         strict: false,
