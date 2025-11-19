@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { authApi } from '../lib/supabaseClient';
+import { authApi } from '../lib/supabaseClient.js';
 
 /**
  * Auth context for managing Supabase session and user across the app.
