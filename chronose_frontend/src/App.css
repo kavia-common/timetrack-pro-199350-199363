@@ -1,0 +1,46 @@
+/* Additional minor tweaks for App layout */
+.title {
+  color: var(--on-dark);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.subtitle {
+  color: var(--on-dark-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tab-btn-today {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: #FFFFFF1A;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--on-dark);
+}
+
+.btn--on-dark {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--on-dark);
+}
+
+@media (max-width: 640px) {
+  .header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 48px;
+    gap: 12px;
+  }
+  .main {
+    padding-left: 0;
+    padding-right: 0;
+    gap: 8px;
+  }
+  .card--body.grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
